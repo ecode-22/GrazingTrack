@@ -3,194 +3,397 @@
 
 <head>
     <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>GrazingTrack — Farm Management</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+    <meta name="theme-color" content="#2d6a4f">
+    <title>GrazingTrack</title>
+    <link rel="manifest" href="manifest.json">
     <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css">
     <link rel="stylesheet" href="https://unpkg.com/leaflet-draw@1.0.4/dist/leaflet.draw.css">
     <link rel="stylesheet" href="style.css">
+    <!-- Turf.js for geometry operations (auto‑split) -->
+    <script src="https://unpkg.com/@turf/turf@6/turf.min.js"></script>
 </head>
 
 <body>
 
-    <!-- SIDEBAR -->
+    <!-- ── SIDEBAR ── -->
     <aside class="sidebar" id="sidebar">
-        <div class="sidebar-header">
-            <div class="logo">🌿 GrazingTrack</div>
-            <div class="farm-subtitle">Free &amp; Open Source</div>
-        </div>
-
-        <div class="sidebar-section">
-            <div class="section-label">Map Tools</div>
-            <div class="tool-row">
-                <button class="tool-btn active" id="btnSelect" onclick="setTool('select')">↖ Select</button>
-                <button class="tool-btn" id="btnDraw" onclick="setTool('draw')">⬡ Draw Field</button>
+        <div class="sb-header">
+            <div class="sb-brand">
+                <span class="sb-leaf">🌿</span>
+                <div>
+                    <div class="sb-name">GrazingTrack</div>
+                    <div class="sb-sub" id="farmNameDisplay">Free &amp; Open Source</div>
+                </div>
             </div>
-            <button class="tool-btn danger full-width" id="btnDelete" onclick="deleteSelected()" style="display:none">
-        ✕ Delete Selected Field
-      </button>
-            <p class="hint" id="toolHint">Click a field to select it, or use Draw Field to outline a new paddock.</p>
+            <button class="sb-x" onclick="document.getElementById('sidebar').classList.remove('open')">✕</button>
         </div>
 
-        <div class="sidebar-section">
-            <div class="section-label">Fields <span class="badge" id="fieldCount">0</span></div>
+        <div class="sb-tools">
+            <div class="sb-label">Drawing Tools</div>
+            <div class="tool-grid">
+                <button class="tcrd active" id="btnSelect" onclick="setTool('select')"><span>↖</span>Select</button>
+                <button class="tcrd" id="btnDraw" onclick="setTool('draw')"><span>✏</span>Draw</button>
+                <button class="tcrd green" id="btnAutoSplit" onclick="openAutoSplit()"><span>⬡</span>Auto-split</button>
+                <button class="tcrd" id="btnEdit" onclick="setTool('edit')" style="display:none"><span>✎</span>Reshape</button>
+            </div>
+            <button class="undo-btn" id="btnUndo" onclick="undoLastVertex()" style="display:none">↩ Undo last point</button>
+            <button class="del-btn" id="btnDelete" onclick="deleteSelected()" style="display:none">✕ Delete selected field</button>
+            <p class="tool-hint" id="toolHint">Click a field on the map to select it.</p>
+        </div>
+
+        <div class="sb-fields">
+            <div class="sb-label">Fields <span class="n-badge" id="fieldCount">0</span></div>
             <div id="fieldList">
-                <p class="empty-msg">No fields yet. Use ⬡ Draw Field to add your first paddock.</p>
+                <div class="empty-state">
+                    <div class="empty-icon">🌾</div>
+                    <p class="empty-msg">No fields yet</p>
+                    <p class="empty-sub">Use Draw or Auto-split to add paddocks</p>
+                </div>
             </div>
         </div>
 
-        <div class="sidebar-section" id="detailSection" style="display:none">
-            <div class="section-label">Selected Field</div>
+        <div class="sb-detail" id="detailSection" style="display:none">
+            <div class="sb-label">Selected Field</div>
             <div id="fieldDetail"></div>
         </div>
 
-        <div class="sidebar-footer">
-            <button class="footer-btn" onclick="openModal('modalExport')">⬇ Export / Backup</button>
-            <button class="footer-btn" onclick="openModal('modalAbout')">ℹ About</button>
+        <div class="sb-storage">
+            <div class="stor-track">
+                <div class="stor-fill" id="storageBar"></div>
+            </div>
+            <div class="stor-lbl" id="storageLabel">Storage: 0 KB / 5120 KB</div>
+        </div>
+
+        <div class="sb-footer">
+            <button class="sb-ftn" onclick="switchTab('dashboard')">📊<span>Dashboard</span></button>
+            <button class="sb-ftn" onclick="openModal('modalExport')">⬇<span>Export</span></button>
+            <button class="sb-ftn" onclick="openModal('modalAbout')">ℹ<span>About</span></button>
+            <button class="sb-ftn" onclick="openSetup()">⚙<span>Setup</span></button>
         </div>
     </aside>
 
-    <!-- MAP -->
-    <main class="map-wrap">
-        <div id="map"></div>
-        <div class="topbar">
-            <button class="topbar-btn" onclick="document.getElementById('sidebar').classList.toggle('open')">☰</button>
-            <div class="topbar-status" id="statusMsg">Select a field or draw a new one</div>
-            <button class="topbar-btn primary" onclick="openGrazingModal(null)">+ Log Grazing</button>
+    <!-- ── MAIN ── -->
+    <main class="app-main">
+
+        <nav class="tab-bar">
+            <button class="tab active" id="tab-map" onclick="switchTab('map')">🗺 Map</button>
+            <button class="tab" id="tab-dashboard" onclick="switchTab('dashboard')">📊 Dashboard</button>
+            <button class="tab" id="tab-rotation" onclick="switchTab('rotation')">🔄 Rotation</button>
+            <button class="tab" id="tab-reports" onclick="switchTab('reports')">📄 Reports</button>
+        </nav>
+
+        <!-- MAP -->
+        <div class="tab-panel active" id="panel-map">
+            <div id="map"></div>
+            <div class="map-bar">
+                <button class="map-btn" onclick="document.getElementById('sidebar').classList.toggle('open')">☰ Fields</button>
+                <div class="map-status" id="statusMsg">Ready — select a field or use the drawing tools</div>
+                <button class="map-btn green" onclick="openGrazingModal(null)">+ Log Grazing</button>
+            </div>
+            <div class="stats-strip">
+                <div class="sc">
+                    <div class="sc-n" id="sFields">0</div>
+                    <div class="sc-l">Fields</div>
+                </div>
+                <div class="sd"></div>
+                <div class="sc">
+                    <div class="sc-n" id="sHa">0 ha</div>
+                    <div class="sc-l">Total area</div>
+                </div>
+                <div class="sd"></div>
+                <div class="sc">
+                    <div class="sc-n" id="sGrazing">—</div>
+                    <div class="sc-l">Grazing</div>
+                </div>
+                <div class="sd"></div>
+                <div class="sc">
+                    <div class="sc-n" id="sReady">0</div>
+                    <div class="sc-l">Ready</div>
+                </div>
+            </div>
         </div>
-        <div class="statsbar">
-            <div class="stat">
-                <div class="stat-val" id="sFields">0</div>
-                <div class="stat-lbl">Fields</div>
-            </div>
-            <div class="stat">
-                <div class="stat-val" id="sHa">0 ha</div>
-                <div class="stat-lbl">Total area</div>
-            </div>
-            <div class="stat">
-                <div class="stat-val" id="sGrazing">—</div>
-                <div class="stat-lbl">Grazing now</div>
-            </div>
-            <div class="stat">
-                <div class="stat-val" id="sReady">0</div>
-                <div class="stat-lbl">Ready</div>
+
+        <!-- DASHBOARD -->
+        <div class="tab-panel" id="panel-dashboard">
+            <div class="sv">
+                <div class="kpi-row" id="dashGrid"></div>
+                <div class="cr">
+                    <div class="card clg" id="dashFieldStatus"></div>
+                    <div class="card" id="dashRainfall"></div>
+                </div>
+                <div class="cr">
+                    <div class="card clg" id="dashRecentEvents"></div>
+                    <div class="card" id="dashStocking"></div>
+                </div>
+                <div class="cr">
+                    <div class="card cfw" id="dashSoilMoisture"></div>
+                </div>
             </div>
         </div>
+
+        <!-- ROTATION -->
+        <div class="tab-panel" id="panel-rotation">
+            <div class="sv">
+                <div class="rotation-hero" id="rotationHero"></div>
+                <div class="rotation-list" id="rotationList"></div>
+            </div>
+        </div>
+
+        <!-- REPORTS -->
+        <div class="tab-panel" id="panel-reports">
+            <div class="sv" id="reportsPage"></div>
+        </div>
+
     </main>
 
-    <!-- MODAL: Name new field -->
+    <!-- ════════ MODALS ════════ -->
+
+    <!-- AUTO-SPLIT -->
+    <div class="overlay" id="modalAutoSplit" style="display:none">
+        <div class="modal mxl">
+            <div class="mh">
+                <div class="mh-title">⬡ Split farm into camps</div>
+                <button class="mh-close" onclick="closeAutoSplit()">✕</button>
+            </div>
+            <div class="as-layout">
+                <!-- Left panel: rendered dynamically by _asRenderPanel() -->
+                <div class="as-panel" id="asControlPanel">
+                    <div class="as-welcome">
+                        <div class="as-welcome-icon">⬡</div>
+                        <p class="as-welcome-title">Draw your farm boundary</p>
+                        <p class="as-welcome-sub">Click the polygon tool on the map, then click around the outer edge of your farm. Double-click the last point to close the shape.</p>
+                    </div>
+                </div>
+                <!-- Right panel: the map -->
+                <div class="as-map-wrap">
+                    <div id="asMap"></div>
+                </div>
+            </div>
+            <div class="mf">
+                <button class="btn-ghost" onclick="closeAutoSplit()">Cancel</button>
+                <button class="btn-primary" id="asSaveBtn" onclick="asSave()" disabled>Create camps</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- NAME NEW FIELD -->
     <div class="overlay" id="modalName" style="display:none">
-        <div class="modal">
-            <div class="modal-title">Name your field</div>
-            <div class="field-group">
-                <label>Field name</label>
-                <input type="text" id="inName" placeholder="e.g. North Paddock" maxlength="40">
+        <div class="modal msm">
+            <div class="mh">
+                <div class="mh-title">✏ Name your field</div>
             </div>
-            <div class="field-group">
-                <label>Field type</label>
-                <select id="inType">
-          <option value="pasture">Pasture</option>
-          <option value="hay">Hay field</option>
-          <option value="crop">Crop</option>
-          <option value="other">Other</option>
-        </select>
+            <div class="mb">
+                <div class="fg"><label>Field name</label><input type="text" id="inName" placeholder="e.g. North Paddock" maxlength="40"></div>
+                <div class="frow">
+                    <div class="fg"><label>Type</label><select id="inType"><option value="pasture">Pasture</option><option value="hay">Hay field</option><option value="crop">Crop</option><option value="other">Other</option></select></div>
+                    <div class="fg"><label>Rest target (days)</label><input type="number" id="inRest" value="42" min="1" max="365"></div>
+                </div>
+                <div class="fg"><label>Max AU/ha <span class="opt">optional</span></label><input type="number" id="inMaxAU" placeholder="e.g. 2.5" min="0" step="0.1"></div>
             </div>
-            <div class="field-group">
-                <label>Target rest period (days)</label>
-                <input type="number" id="inRest" value="42" min="1" max="365">
-                <small>How long should this field rest between grazings?</small>
-            </div>
-            <div class="modal-actions">
-                <button class="btn-secondary" onclick="cancelDraw()">Cancel</button>
-                <button class="btn-primary" onclick="saveNewField()">Save Field</button>
+            <div class="mf">
+                <button class="btn-ghost" onclick="cancelDraw()">Cancel</button>
+                <button class="btn-primary" onclick="saveNewField()">Save field</button>
             </div>
         </div>
     </div>
 
-    <!-- MODAL: Log grazing event -->
+    <!-- EDIT FIELD -->
+    <div class="overlay" id="modalEditField" style="display:none">
+        <div class="modal msm">
+            <div class="mh">
+                <div class="mh-title">✎ Edit field</div><button class="mh-close" onclick="closeModal('modalEditField')">✕</button>
+            </div>
+            <div class="mb">
+                <input type="hidden" id="editFieldId">
+                <div class="fg"><label>Field name</label><input type="text" id="editName" maxlength="40"></div>
+                <div class="frow">
+                    <div class="fg"><label>Type</label><select id="editType"><option value="pasture">Pasture</option><option value="hay">Hay field</option><option value="crop">Crop</option><option value="other">Other</option></select></div>
+                    <div class="fg"><label>Rest target (days)</label><input type="number" id="editRest" min="1" max="365"></div>
+                </div>
+                <div class="fg"><label>Max AU/ha <span class="opt">optional</span></label><input type="number" id="editMaxAU" step="0.1" min="0" placeholder="Leave blank to disable"></div>
+                <div class="fg"><label>Field colour</label>
+                    <div class="color-swatches" id="editColorPicker"></div>
+                </div>
+            </div>
+            <div class="mf">
+                <button class="btn-ghost" onclick="closeModal('modalEditField')">Cancel</button>
+                <button class="btn-primary" onclick="saveFieldEdit()">Save changes</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- LOG GRAZING (with group selection) -->
     <div class="overlay" id="modalGrazing" style="display:none">
-        <div class="modal">
-            <div class="modal-title">Log Grazing Event</div>
-            <div class="field-group">
-                <label>Field</label>
-                <select id="gField"></select>
+        <div class="modal msm">
+            <div class="mh">
+                <div class="mh-title">🐄 Log Grazing Event</div>
+                <button class="mh-close" onclick="closeModal('modalGrazing')">✕</button>
             </div>
-            <div class="two-col">
-                <div class="field-group"><label>Start date</label><input type="date" id="gStart"></div>
-                <div class="field-group"><label>End date</label><input type="date" id="gEnd"></div>
-            </div>
-            <div class="two-col">
-                <div class="field-group">
-                    <label>Animal type</label>
-                    <select id="gAnimalType">
-            <option value="cattle">Cattle</option>
-            <option value="sheep">Sheep</option>
-            <option value="goats">Goats</option>
-            <option value="horses">Horses</option>
-            <option value="pigs">Pigs</option>
-            <option value="mixed">Mixed</option>
-          </select>
+            <div class="mb">
+                <div class="fg"><label>Field</label><select id="gField"></select></div>
+
+                <div class="fg"><label>Animal group</label>
+                    <select id="gGroup">
+                        <option value="custom">Choose a group or enter manually</option>
+                    </select>
                 </div>
-                <div class="field-group">
-                    <label>Number of animals</label>
-                    <input type="number" id="gCount" placeholder="e.g. 60" min="1">
+
+                <div class="frow">
+                    <div class="fg"><label>Animal type</label><input type="text" id="gAnimalType" placeholder="e.g. cattle" list="animalTypes"></div>
+                    <div class="fg"><label>Number of animals</label><input type="number" id="gCount" min="1"></div>
                 </div>
+                <datalist id="animalTypes">
+                    <option value="cattle">cattle</option>
+                    <option value="sheep">sheep</option>
+                    <option value="goats">goats</option>
+                    <option value="horses">horses</option>
+                    <option value="pigs">pigs</option>
+                    <option value="mixed">mixed</option>
+                </datalist>
+
+                <!-- Date range — gStart and gEnd were previously missing from the HTML,
+                     causing openGrazingModal() to throw TypeError: null.value and silently
+                     exit before openModal() was ever reached. -->
+                <div class="frow">
+                    <div class="fg"><label>Start date</label><input type="date" id="gStart"></div>
+                    <div class="fg"><label>End date</label><input type="date" id="gEnd"></div>
+                </div>
+
+                <div id="gShiftRow" class="frow" style="display:none">
+                    <div class="fg"><label>Shift</label><select id="gShift"><option value="day">☀️ Day</option><option value="night">🌙 Night</option><option value="fullday">Full day</option></select></div>
+                    <div class="fg"><label>Herd</label><select id="gHerd"></select></div>
+                </div>
+                <div id="stockingWarning" class="warn-box" style="display:none"></div>
+                <div class="fg"><label>Notes <span class="opt">optional</span></label><textarea id="gNotes" rows="2" placeholder="e.g. Moved due to rain..."></textarea></div>
             </div>
-            <div class="field-group">
-                <label>Notes (optional)</label>
-                <textarea id="gNotes" rows="2" placeholder="e.g. Moved due to rain, added supplement..."></textarea>
-            </div>
-            <div class="modal-actions">
-                <button class="btn-secondary" onclick="closeModal('modalGrazing')">Cancel</button>
-                <button class="btn-primary" onclick="saveGrazingEvent()">Save Event</button>
+            <div class="mf">
+                <button class="btn-ghost" onclick="closeModal('modalGrazing')">Cancel</button>
+                <button class="btn-primary" onclick="saveGrazingEvent()">Save event</button>
             </div>
         </div>
     </div>
 
-    <!-- MODAL: Field history -->
+    <!-- HISTORY -->
     <div class="overlay" id="modalHistory" style="display:none">
-        <div class="modal modal-wide">
-            <div class="modal-title" id="historyTitle">Grazing History</div>
-            <div id="historyBody"></div>
-            <div class="modal-actions">
-                <button class="btn-secondary" onclick="closeModal('modalHistory')">Close</button>
-                <button class="btn-primary" onclick="historyAddEvent()">+ Add Event</button>
+        <div class="modal mlg">
+            <div class="mh">
+                <div class="mh-title" id="historyTitle">Grazing History</div>
+                <button class="mh-close" onclick="closeModal('modalHistory')">✕</button>
             </div>
+            <div class="mb" id="historyBody"></div>
+            <div class="mf"><button class="btn-ghost" onclick="closeModal('modalHistory')">Close</button><button class="btn-primary" onclick="historyAddEvent()">+ Add Event</button></div>
         </div>
     </div>
 
-    <!-- MODAL: Export -->
+    <!-- SOIL MOISTURE -->
+    <div class="overlay" id="modalMoisture" style="display:none">
+        <div class="modal msm">
+            <div class="mh">
+                <div class="mh-title">💧 Log Soil Moisture</div>
+                <button class="mh-close" onclick="closeModal('modalMoisture')">✕</button>
+            </div>
+            <div class="mb">
+                <div class="fg"><label>Field</label><select id="mField"></select></div>
+                <div class="frow">
+                    <div class="fg"><label>Date</label><input type="date" id="mDate"></div>
+                    <div class="fg"><label>Moisture %</label><input type="number" id="mPct" placeholder="42" min="0" max="100"></div>
+                </div>
+                <div class="frow">
+                    <div class="fg"><label>Depth (cm)</label><input type="number" id="mDepth" placeholder="20" min="1"></div>
+                    <div class="fg"><label>Sensor ID <span class="opt">optional</span></label><input type="text" id="mSensor" placeholder="sensor-01"></div>
+                </div>
+                <div class="fg"><label>Notes <span class="opt">optional</span></label><input type="text" id="mNotes" placeholder="e.g. After rain"></div>
+            </div>
+            <div class="mf"><button class="btn-ghost" onclick="closeModal('modalMoisture')">Cancel</button><button class="btn-primary" onclick="saveMoistureReading()">Save reading</button></div>
+        </div>
+    </div>
+
+    <!-- EXPORT -->
     <div class="overlay" id="modalExport" style="display:none">
-        <div class="modal">
-            <div class="modal-title">Export &amp; Backup</div>
-            <p class="modal-desc">Download your data or import a previous backup. No account or internet needed — your data stays on your device.</p>
-            <div class="export-btns">
-                <button class="btn-primary full-width" onclick="exportJSON()">⬇ Download JSON backup</button>
-                <button class="btn-primary full-width" onclick="exportCSV()">⬇ Download events as CSV</button>
-                <label class="btn-secondary full-width import-label">
-          ⬆ Import JSON backup
-          <input type="file" accept=".json" id="importFile" onchange="importJSON(event)">
-        </label>
+        <div class="modal msm">
+            <div class="mh">
+                <div class="mh-title">⬇ Export &amp; Backup</div>
+                <button class="mh-close" onclick="closeModal('modalExport')">✕</button>
             </div>
-            <div class="modal-actions"><button class="btn-secondary" onclick="closeModal('modalExport')">Close</button></div>
+            <div class="mb">
+                <p class="m-intro">Data stays on your device. Export to back up or use with other tools.</p>
+                <div class="export-list">
+                    <button class="exp-row" onclick="exportJSON()"><span>💾</span><div><b>JSON backup</b><small>Full restore, all data</small></div></button>
+                    <button class="exp-row" onclick="exportGeoJSON()"><span>🗺</span><div><b>GeoJSON fields</b><small>QGIS, ArcGIS, Google Earth</small></div></button>
+                    <button class="exp-row" onclick="exportCSV()"><span>📊</span><div><b>Events CSV</b><small>Excel, LibreOffice, Sheets</small></div></button>
+                    <button class="exp-row" onclick="exportSensorCSV()"><span>🌱</span><div><b>Sensor CSV</b><small>Soil moisture readings</small></div></button>
+                    <label class="exp-row"><span>⬆</span><div><b>Import JSON backup</b><small>Restore previous backup</small></div><input type="file" accept=".json" id="importFile" onchange="importJSON(event)" style="display:none"></label>
+                </div>
+                <button class="danger-btn" onclick="clearAllData()">✕ Clear all data</button>
+            </div>
+            <div class="mf"><button class="btn-ghost" onclick="closeModal('modalExport')">Close</button></div>
         </div>
     </div>
 
-    <!-- MODAL: About -->
+    <!-- ABOUT -->
     <div class="overlay" id="modalAbout" style="display:none">
-        <div class="modal">
-            <div class="modal-title">About GrazingTrack</div>
-            <p class="modal-desc">
-                GrazingTrack is a free, open source rotational grazing management tool for farmers.<br><br>
-                <strong>Built with:</strong><br> • Leaflet.js — open source map library<br> • OpenStreetMap / Esri — free satellite tiles<br> • Leaflet.draw — polygon drawing<br> • Browser localStorage — no server needed<br><br>
-                <strong>License:</strong> MIT — free to use, modify, and share.<br><br> All your data stays on your device. No accounts, no subscriptions, no limits.
-            </p>
-            <div class="modal-actions"><button class="btn-primary" onclick="closeModal('modalAbout')">Close</button></div>
+        <div class="modal msm">
+            <div class="mh">
+                <div class="mh-title">🌿 About GrazingTrack v4.0</div>
+                <button class="mh-close" onclick="closeModal('modalAbout')">✕</button>
+            </div>
+            <div class="mb">
+                <p class="m-intro">Free and open source rotational grazing management for farmers.</p>
+                <div class="about-list">
+                    <div class="al">✅ Draw fields or auto-split from farm boundary</div>
+                    <div class="al">✅ Edit any field — name, type, colour, rest target</div>
+                    <div class="al">✅ Fence-line guided camp splitting</div>
+                    <div class="al">✅ Manual angle control for strip orientation</div>
+                    <div class="al">✅ Day / Night dual grazing cycle</div>
+                    <div class="al">✅ Live rainfall overlay (Open-Meteo, free)</div>
+                    <div class="al">✅ Soil moisture — manual or DIY sensor import</div>
+                    <div class="al">✅ PDF farm report</div>
+                    <div class="al">✅ GeoJSON export for QGIS and other GIS tools</div>
+                    <div class="al">✅ Offline PWA — installs on phone and desktop</div>
+                    <div class="al">✅ MIT licence — free forever, no accounts</div>
+                </div>
+            </div>
+            <div class="mf"><button class="btn-primary" onclick="closeModal('modalAbout')">Close</button></div>
         </div>
     </div>
+
+    <!-- SETUP WIZARD (unchanged) -->
+    <div class="overlay setup-overlay" id="setupOverlay" style="display:none">
+        <div class="modal setup-modal">
+            <div class="setup-header">
+                <div class="setup-logo">🌿 GrazingTrack</div>
+                <div class="setup-step-label" id="setupStepLabel">Step 1 of 5</div>
+            </div>
+            <div class="setup-progress-track">
+                <div class="setup-progress-fill" id="setupProgress" style="width:20%"></div>
+            </div>
+            <div class="setup-title" id="setupTitle">Welcome</div>
+            <div class="setup-body" id="setupBody"></div>
+            <div class="setup-nav">
+                <button class="btn-ghost" id="setupBack" onclick="setupBack()" style="display:none">← Back</button>
+                <button class="setup-skip" onclick="if(confirm('Skip setup? Re-run from the ⚙ button anytime.')) closeSetup(false)">Skip</button>
+                <button class="btn-primary" id="setupNext" onclick="setupNext()">Next →</button>
+            </div>
+        </div>
+    </div>
+
+    <div class="install-banner" id="installBanner" onclick="installApp()">📲 Install GrazingTrack on your device</div>
 
     <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
     <script src="https://unpkg.com/leaflet-draw@1.0.4/dist/leaflet.draw.js"></script>
-    <script src="app.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
+    <!-- Load order matters: data → utils → map → split → events → dashboard → setup -->
+    <!-- gt-data.js must be first so DB_VERSION, COLORS, load/save are available  -->
+    <!-- gt-utils.js second so uid(), calcAreaHa(), openModal() etc. are ready    -->
+    <!-- gt-map.js third — it boots the app at the bottom (initMap + checkFirstRun) -->
+    <script src="gt-data.js"></script>
+    <script src="gt-utils.js"></script>
+    <script src="gt-map.js"></script>
+    <script src="gt-split.js"></script>
+    <script src="gt-events.js"></script>
+    <script src="gt-dashboard.js"></script>
+    <script src="setup.js"></script>
 </body>
 
 </html>
