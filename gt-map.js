@@ -296,12 +296,23 @@ function selectField(fieldId) {
     const last = events[0];
     const restDays = last ? daysSince(last.endDate) : null;
     const status = getStatus(field);
+
+    // Find the active grazing event if any (startDate <= today <= endDate)
+    const today = todayStr();
+    const activeEvent = events.find(e => e.startDate <= today && e.endDate >= today);
+
     let stockHTML = '';
     if (last && field.maxAUperHa) {
         const auHa = last.animalCount / field.areaHa;
         if (auHa > field.maxAUperHa)
             stockHTML = `<div class="warn-box alert" style="margin:8px 0;font-size:11px">⚠ Last event: ${auHa.toFixed(1)} AU/ha exceeds limit of ${field.maxAUperHa} AU/ha</div>`;
     }
+
+    // Show "End Grazing" only when there is an active event
+    const endBtn = activeEvent ?
+        `<button class="detail-btn end-graze" onclick="endGrazingToday('${activeEvent.id}','${fieldId}')">⏹ End Grazing</button>` :
+        '';
+
     document.getElementById('detailSection').style.display = 'block';
     document.getElementById('fieldDetail').innerHTML = `
         <div class="detail-row"><span class="detail-key">Name</span><span class="detail-val">${field.name}</span></div>
@@ -314,9 +325,10 @@ function selectField(fieldId) {
         <div class="detail-row"><span class="detail-key">Events logged</span><span class="detail-val">${events.length}</span></div>
         ${stockHTML}
         <div class="detail-actions">
-            <button class="detail-btn edit"    onclick="openEditFieldModal('${fieldId}')">✎ Edit</button>
-            <button class="detail-btn"          onclick="openHistoryModal('${fieldId}')">📋 History</button>
-            <button class="detail-btn primary"  onclick="openGrazingModal('${fieldId}')">+ Graze</button>
+            <button class="detail-btn edit"   onclick="openEditFieldModal('${fieldId}')">✎ Edit</button>
+            <button class="detail-btn"         onclick="openHistoryModal('${fieldId}')">📋 History</button>
+            ${endBtn}
+            <button class="detail-btn primary" onclick="openGrazingModal('${fieldId}')">+ Graze</button>
         </div>`;
     document.getElementById('btnDelete').style.display = 'flex';
     const eb = document.getElementById('btnEdit');
@@ -326,6 +338,30 @@ function selectField(fieldId) {
             map.fitBounds(l.getBounds(), { padding: [60, 60], maxZoom: 17 });
     });
     setStatus(`${field.name} — ${field.areaHa.toFixed(2)} ha`);
+}
+
+// End the active grazing event today — sets its endDate to today so
+// the field immediately transitions to "resting" status.
+function endGrazingToday(eventId, fieldId) {
+    const events = loadEvents();
+    const ev = events.find(e => e.id === eventId);
+    if (!ev) return;
+
+    const today = todayStr();
+    const days = daysBetween(ev.startDate, today);
+    const field = loadFields().find(f => f.id === fieldId);
+    const name = field ? field.name : 'this field';
+
+    if (!confirm(`End grazing on ${name} today?\n\n${ev.animalCount} ${ev.animalType} · ${days} day${days !== 1 ? 's' : ''} (${fmtDate(ev.startDate)} → ${fmtDate(today)})\n\nThe rest period will start from today.`)) return;
+
+    ev.endDate = today;
+    saveEvents(events);
+
+    refreshMapColors();
+    renderFieldList();
+    updateStats();
+    selectField(fieldId); // re-render the detail panel with updated status
+    setStatus(`Grazing ended on "${name}" — rest period started today.`);
 }
 
 function deselectField() {

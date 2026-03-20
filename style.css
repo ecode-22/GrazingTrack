@@ -436,6 +436,18 @@ body {
     background: #1f4f38
 }
 
+.detail-btn.end-graze {
+    background: #fff7ed;
+    border-color: #fed7aa;
+    color: #c2410c;
+    font-weight: 600
+}
+
+.detail-btn.end-graze:hover {
+    background: #ffedd5;
+    border-color: #fb923c
+}
+
 .detail-btn.edit {
     background: var(--bg-off);
     border-color: #93c5fd;
