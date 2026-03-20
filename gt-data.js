@@ -25,15 +25,57 @@ function save(k, v) {
 // ── Typed loaders / savers ───────────────────────────────────
 const loadFields = () => load('gt_fields');
 const loadEvents = () => load('gt_events');
-const loadMoisture = () => load('gt_moisture');
 const saveFields = f => save('gt_fields', f);
 const saveEvents = e => save('gt_events', e);
-const saveMoisture = m => save('gt_moisture', m);
+
+// Animal groups — stored in their own key for easy editing.
+// Falls back to gt_config.animalGroups for backwards compatibility
+// with data saved by the setup wizard before this key existed.
+function loadGroups() {
+    const direct = load('gt_groups');
+    if (direct.length) return direct;
+    // Fallback: read from gt_config (written by setup wizard)
+    try {
+        const cfg = JSON.parse(localStorage.getItem('gt_config') || '{}');
+        const legacy = cfg.animalGroups || cfg.groups || [];
+        if (legacy.length) {
+            // Migrate once: write to the new key and return
+            const migrated = legacy.map((g, i) => ({
+                id: g.id || uid_group(i),
+                name: g.name || `Group ${i+1}`,
+                type: g.type || 'cattle',
+                count: Number(g.count) || 0,
+                herd: g.herd || ''
+            }));
+            localStorage.setItem('gt_groups', JSON.stringify(migrated));
+            return migrated;
+        }
+    } catch (e) {}
+    return [];
+}
+
+function saveGroups(groups) {
+    try {
+        localStorage.setItem('gt_groups', JSON.stringify(groups));
+        // Keep gt_config.animalGroups in sync so the setup wizard
+        // review step stays consistent if re-opened.
+        const cfg = JSON.parse(localStorage.getItem('gt_config') || '{}');
+        cfg.animalGroups = groups;
+        localStorage.setItem('gt_config', JSON.stringify(cfg));
+        updateStorageBar();
+    } catch (e) {}
+    // Also refresh the in-memory reference used by the grazing modal
+    window._animalGroups = groups;
+}
+
+function uid_group(i) {
+    return 'grp-' + Date.now().toString(36) + '-' + i;
+}
 
 // ── Storage usage meter ──────────────────────────────────────
 function getStorageUsage() {
     let t = 0;
-    ['gt_fields', 'gt_events', 'gt_moisture'].forEach(k => {
+    ['gt_fields', 'gt_events', 'gt_groups'].forEach(k => {
         const v = localStorage.getItem(k);
         if (v) t += v.length * 2; // 2 bytes per UTF-16 char
     });

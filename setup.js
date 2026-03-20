@@ -88,36 +88,58 @@ function renderSetupStep() {
 
 // ── STEP 1: Farm name & location ──────────────────────────────
 function renderStep1(title, body) {
-    title.textContent = '🌿 Welcome — let\'s set up your farm';
+    title.textContent = '🌿 Welcome to GrazingTrack';
     body.innerHTML = `
-    <p class="setup-desc">GrazingTrack will ask a few quick questions to personalise the app for how you farm. You can change any of this later in Settings.</p>
+    <p class="setup-desc">Free rotational grazing management — right on your phone. Let's take 2 minutes to set up your farm. You can change everything later.</p>
 
     <div class="setup-field">
-      <label>Farm name</label>
-      <input type="text" id="s1Name" placeholder="e.g. Riverside Farm" value="${setupData.farmName}" maxlength="50">
+      <label>Farm name <span class="setup-opt">required</span></label>
+      <input type="text" id="s1Name" placeholder="e.g. Riverside Farm"
+             value="${setupData.farmName}" maxlength="50" autocomplete="off">
     </div>
 
     <div class="setup-field">
-      <label>Your location <span class="setup-optional">(helps centre the map on your farm)</span></label>
-      <div class="location-row">
-        <input type="text" id="s1Lat" placeholder="Latitude e.g. -26.20" value="${setupData.farmLocation.lat || ''}">
-        <input type="text" id="s1Lng" placeholder="Longitude e.g. 28.04" value="${setupData.farmLocation.lng || ''}">
-        <button class="setup-locate-btn" onclick="autoLocate()">📍 Use GPS</button>
+      <label>Your farm location</label>
+      <button class="setup-gps-btn" onclick="autoLocate()" id="gpsBtn">
+        <span class="setup-gps-icon">📍</span>
+        <div>
+          <div class="setup-gps-title">Use my current location</div>
+          <div class="setup-gps-sub">Centres the map on your farm automatically</div>
+        </div>
+      </button>
+      <div class="setup-coords-row">
+        <input type="number" id="s1Lat" placeholder="Latitude e.g. -26.20"
+               value="${setupData.farmLocation.lat || ''}" step="any">
+        <input type="number" id="s1Lng" placeholder="Longitude e.g. 28.04"
+               value="${setupData.farmLocation.lng || ''}" step="any">
       </div>
-      <small>Or leave blank — you can pan the map to your farm in the next steps.</small>
-    </div>
-
-    <div class="setup-tip">
-      💡 <strong>Tip:</strong> Open Google Maps, right-click your farm, and copy the coordinates shown at the top of the menu.
+      <small>💡 Or open Google Maps, long-press your farm, and copy the numbers at the top.</small>
     </div>`;
+
+    // Auto-focus the farm name input after render
+    setTimeout(() => {
+        const el = document.getElementById('s1Name');
+        if (el) el.focus();
+    }, 100);
 }
 
 function autoLocate() {
-    if (!navigator.geolocation) { alert('GPS not available on this device.'); return; }
-    navigator.geolocation.getCurrentPosition(pos => {
-        document.getElementById('s1Lat').value = pos.coords.latitude.toFixed(5);
-        document.getElementById('s1Lng').value = pos.coords.longitude.toFixed(5);
-    }, () => alert('Could not get location. Enter coordinates manually.'));
+    const btn = document.getElementById('gpsBtn');
+    if (btn) btn.textContent = '⏳ Getting location…';
+    if (!navigator.geolocation) {
+        if (btn) btn.innerHTML = `<span class="setup-gps-icon">📍</span><div><div class="setup-gps-title">GPS not available</div><div class="setup-gps-sub">Enter coordinates manually below</div></div>`;
+        return;
+    }
+    navigator.geolocation.getCurrentPosition(
+        pos => {
+            document.getElementById('s1Lat').value = pos.coords.latitude.toFixed(5);
+            document.getElementById('s1Lng').value = pos.coords.longitude.toFixed(5);
+            if (btn) btn.innerHTML = `<span class="setup-gps-icon">✅</span><div><div class="setup-gps-title">Location found!</div><div class="setup-gps-sub">${pos.coords.latitude.toFixed(3)}, ${pos.coords.longitude.toFixed(3)}</div></div>`;
+        },
+        () => {
+            if (btn) btn.innerHTML = `<span class="setup-gps-icon">📍</span><div><div class="setup-gps-title">Could not get location</div><div class="setup-gps-sub">Enter coordinates manually below</div></div>`;
+        }, { timeout: 10000 }
+    );
 }
 
 function validateStep1() {

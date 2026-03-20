@@ -127,7 +127,7 @@
                     <div class="card" id="dashStocking"></div>
                 </div>
                 <div class="cr">
-                    <div class="card cfw" id="dashSoilMoisture"></div>
+                    <div class="card cfw" id="dashAnimalGroups"></div>
                 </div>
             </div>
         </div>
@@ -223,7 +223,7 @@
         </div>
     </div>
 
-    <!-- LOG GRAZING (with group selection) -->
+    <!-- LOG GRAZING -->
     <div class="overlay" id="modalGrazing" style="display:none">
         <div class="modal msm">
             <div class="mh">
@@ -231,45 +231,92 @@
                 <button class="mh-close" onclick="closeModal('modalGrazing')">✕</button>
             </div>
             <div class="mb">
+
+                <!-- Field selector -->
                 <div class="fg"><label>Field</label><select id="gField"></select></div>
 
-                <div class="fg"><label>Animal group</label>
-                    <select id="gGroup">
-                        <option value="custom">Choose a group or enter manually</option>
-                    </select>
+                <!-- Group picker — tappable cards, auto-fills everything -->
+                <div class="fg">
+                    <div class="grp-picker-label">
+                        Animal group
+                        <button class="grp-manage-btn" onclick="switchTab('dashboard');closeModal('modalGrazing')">
+                            Manage groups
+                        </button>
+                    </div>
+                    <div id="gGroupPicker"></div>
                 </div>
 
-                <div class="frow">
-                    <div class="fg"><label>Animal type</label><input type="text" id="gAnimalType" placeholder="e.g. cattle" list="animalTypes"></div>
-                    <div class="fg"><label>Number of animals</label><input type="number" id="gCount" min="1"></div>
+                <!-- Manual inputs: always visible when no groups; shown after pick otherwise -->
+                <div id="gManualInputs">
+                    <div class="frow">
+                        <div class="fg">
+                            <label>Animal type</label>
+                            <input type="text" id="gAnimalType" placeholder="e.g. cattle" list="animalTypes">
+                        </div>
+                        <div class="fg">
+                            <label>Number of animals</label>
+                            <input type="number" id="gCount" min="1">
+                        </div>
+                    </div>
+                    <div class="fg">
+                        <label>Herd <span class="opt">optional</span></label>
+                        <input type="text" id="gHerd" placeholder="e.g. Herd A">
+                    </div>
                 </div>
+
                 <datalist id="animalTypes">
-                    <option value="cattle">cattle</option>
-                    <option value="sheep">sheep</option>
-                    <option value="goats">goats</option>
-                    <option value="horses">horses</option>
-                    <option value="pigs">pigs</option>
-                    <option value="mixed">mixed</option>
+                    <option value="cattle"><option value="sheep"><option value="goats">
+                    <option value="horses"><option value="pigs"><option value="mixed">
                 </datalist>
 
-                <!-- Date range — gStart and gEnd were previously missing from the HTML,
-                     causing openGrazingModal() to throw TypeError: null.value and silently
-                     exit before openModal() was ever reached. -->
+                <!-- Dates -->
                 <div class="frow">
                     <div class="fg"><label>Start date</label><input type="date" id="gStart"></div>
                     <div class="fg"><label>End date</label><input type="date" id="gEnd"></div>
                 </div>
 
-                <div id="gShiftRow" class="frow" style="display:none">
-                    <div class="fg"><label>Shift</label><select id="gShift"><option value="day">☀️ Day</option><option value="night">🌙 Night</option><option value="fullday">Full day</option></select></div>
-                    <div class="fg"><label>Herd</label><select id="gHerd"></select></div>
-                </div>
                 <div id="stockingWarning" class="warn-box" style="display:none"></div>
-                <div class="fg"><label>Notes <span class="opt">optional</span></label><textarea id="gNotes" rows="2" placeholder="e.g. Moved due to rain..."></textarea></div>
+
+                <div class="fg">
+                    <label>Notes <span class="opt">optional</span></label>
+                    <textarea id="gNotes" rows="2" placeholder="e.g. Moved due to rain..."></textarea>
+                </div>
             </div>
             <div class="mf">
                 <button class="btn-ghost" onclick="closeModal('modalGrazing')">Cancel</button>
                 <button class="btn-primary" onclick="saveGrazingEvent()">Save event</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- GROUP ADD/EDIT MODAL -->
+    <div class="overlay" id="modalGroup" style="display:none">
+        <div class="modal msm">
+            <div class="mh">
+                <div class="mh-title" id="groupModalTitle">🐄 Add animal group</div>
+                <button class="mh-close" onclick="closeModal('modalGroup')">✕</button>
+            </div>
+            <div class="mb">
+                <input type="hidden" id="groupEditId">
+                <div class="fg"><label>Group name</label>
+                    <input type="text" id="groupName" placeholder="e.g. Main herd" maxlength="40"></div>
+                <div class="frow">
+                    <div class="fg"><label>Animal type</label>
+                        <input type="text" id="groupType" placeholder="cattle" list="animalTypes2">
+                        <datalist id="animalTypes2">
+                            <option value="cattle"><option value="sheep"><option value="goats">
+                            <option value="horses"><option value="pigs"><option value="mixed">
+                        </datalist>
+                    </div>
+                    <div class="fg"><label>Number of animals</label>
+                        <input type="number" id="groupCount" min="1" placeholder="120"></div>
+                </div>
+                <div class="fg"><label>Herd label <span class="opt">optional</span></label>
+                    <input type="text" id="groupHerd" placeholder="e.g. Herd A"></div>
+            </div>
+            <div class="mf">
+                <button class="btn-ghost" onclick="closeModal('modalGroup')">Cancel</button>
+                <button class="btn-primary" onclick="saveGroup()">Save group</button>
             </div>
         </div>
     </div>

@@ -942,6 +942,243 @@ body {
 }
 
 
+/* ── Animal group picker (inside grazing modal) ── */
+
+.grp-picker-label {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    font-size: 10px;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: .05em;
+    color: var(--muted);
+    margin-bottom: 6px
+}
+
+.grp-manage-btn {
+    font-size: 10px;
+    font-weight: 600;
+    color: var(--green);
+    background: none;
+    border: none;
+    cursor: pointer;
+    padding: 0;
+    text-decoration: underline;
+    text-underline-offset: 2px
+}
+
+.grp-cards {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(100px, 1fr));
+    gap: 6px;
+    margin-bottom: 10px
+}
+
+.grp-card {
+    padding: 10px 8px 9px;
+    border: 1.5px solid var(--border);
+    border-radius: var(--radius-lg);
+    background: var(--bg-off);
+    cursor: pointer;
+    text-align: center;
+    transition: all .12s;
+    -webkit-tap-highlight-color: transparent;
+    min-height: 64px;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 2px
+}
+
+.grp-card:hover {
+    border-color: var(--green-border);
+    background: var(--green-pale)
+}
+
+.grp-card.selected {
+    border-color: var(--green);
+    background: var(--green-pale);
+    box-shadow: 0 0 0 2px rgba(45, 106, 79, .15)
+}
+
+.grp-card-manual {
+    border-style: dashed;
+    color: var(--muted)
+}
+
+.grp-card-manual.selected {
+    border-style: solid
+}
+
+.grp-card-icon {
+    font-size: 22px;
+    line-height: 1;
+    margin-bottom: 1px
+}
+
+.grp-card-name {
+    font-size: 11px;
+    font-weight: 700;
+    color: var(--text)
+}
+
+.grp-card-sub {
+    font-size: 9px;
+    color: var(--faint)
+}
+
+
+/* Empty state when no groups exist */
+
+.grp-none {
+    padding: 8px 0 12px;
+    text-align: center
+}
+
+.grp-none-msg {
+    font-size: 12px;
+    color: var(--muted);
+    margin-bottom: 10px
+}
+
+.grp-none-add {
+    display: inline-block;
+    padding: 10px 20px;
+    background: var(--green);
+    color: #fff;
+    border: none;
+    border-radius: var(--radius-lg);
+    font-size: 13px;
+    font-weight: 600;
+    cursor: pointer;
+    transition: background .12s;
+    min-height: 44px
+}
+
+.grp-none-add:hover {
+    background: #1f4f38
+}
+
+.grp-none-or {
+    font-size: 10px;
+    color: var(--faint);
+    margin-top: 8px
+}
+
+.ev-herd {
+    color: var(--faint);
+    font-size: 10px
+}
+
+
+/* ── Animal groups dashboard card ── */
+
+.grp-add-btn {
+    float: right;
+    font-size: 11px;
+    font-weight: 600;
+    color: var(--green);
+    background: var(--green-pale);
+    border: 1.5px solid var(--green-border);
+    border-radius: var(--radius);
+    padding: 3px 10px;
+    cursor: pointer;
+    transition: background .12s;
+    min-height: 28px
+}
+
+.grp-add-btn:hover {
+    background: #dcfce7
+}
+
+.grp-empty-card {
+    padding: 8px 0;
+    color: var(--muted);
+    font-size: 13px
+}
+
+.grp-list {
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+    margin-top: 4px
+}
+
+.grp-row {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: 9px 4px;
+    border-bottom: 1px solid var(--border-soft)
+}
+
+.grp-row:last-child {
+    border-bottom: none
+}
+
+.grp-row-icon {
+    font-size: 22px;
+    flex-shrink: 0;
+    width: 28px;
+    text-align: center
+}
+
+.grp-row-info {
+    flex: 1;
+    min-width: 0
+}
+
+.grp-row-name {
+    font-size: 13px;
+    font-weight: 600;
+    color: var(--text)
+}
+
+.grp-row-sub {
+    font-size: 11px;
+    color: var(--faint);
+    margin-top: 1px
+}
+
+.grp-row-actions {
+    display: flex;
+    gap: 4px;
+    flex-shrink: 0
+}
+
+.grp-btn {
+    width: 30px;
+    height: 30px;
+    border-radius: var(--radius);
+    border: 1.5px solid var(--border);
+    background: var(--bg-off);
+    font-size: 12px;
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    transition: all .12s;
+    color: var(--muted)
+}
+
+.grp-btn:hover {
+    background: var(--green-pale);
+    border-color: var(--green-border);
+    color: var(--green)
+}
+
+.grp-btn.red {
+    color: var(--red)
+}
+
+.grp-btn.red:hover {
+    background: var(--red-bg);
+    border-color: var(--red-border);
+    color: var(--red)
+}
+
+
 /* Tables */
 
 .htbl {
@@ -1817,6 +2054,29 @@ body {
 }
 
 
+/* ↺ Redraw boundary button */
+
+.as-redraw-btn {
+    width: 100%;
+    margin-top: 10px;
+    padding: 7px 10px;
+    border-radius: var(--radius);
+    border: 1.5px solid var(--border);
+    background: var(--bg-off);
+    font-size: 11px;
+    font-weight: 600;
+    color: var(--muted);
+    cursor: pointer;
+    transition: all .12s
+}
+
+.as-redraw-btn:hover {
+    background: #f0ede7;
+    border-color: #c5c0b6;
+    color: var(--text)
+}
+
+
 /* Bottom badge */
 
 .as-total-badge {
@@ -1868,11 +2128,44 @@ body {
 
 .setup-modal {
     max-width: 560px;
+    width: 100%;
     border-radius: var(--radius-xl);
     padding: 0;
     display: flex;
     flex-direction: column;
     max-height: 94vh
+}
+
+
+/* On mobile: full-width, rounded top, slides from bottom */
+
+@media (max-width: 720px) {
+    .setup-overlay {
+        align-items: flex-end
+    }
+    .setup-modal {
+        max-width: 100%;
+        border-radius: var(--radius-xl) var(--radius-xl) 0 0;
+        max-height: 92vh
+    }
+    .setup-nav {
+        padding-bottom: calc(14px + env(safe-area-inset-bottom, 0px))
+    }
+    .setup-field input,
+    .setup-field select,
+    .setup-field textarea {
+        font-size: 16px !important;
+        /* Prevents iOS auto-zoom */
+        min-height: 44px
+    }
+    .setup-coords-row {
+        flex-direction: column
+    }
+    .setup-next,
+    .setup-back {
+        min-height: 48px;
+        font-size: 15px
+    }
 }
 
 .setup-header {
@@ -1987,6 +2280,60 @@ body {
     color: var(--faint);
     display: block;
     margin-top: 3px
+}
+
+
+/* Big GPS button on step 1 */
+
+.setup-gps-btn {
+    width: 100%;
+    display: flex;
+    align-items: center;
+    gap: 14px;
+    padding: 14px 16px;
+    margin-bottom: 10px;
+    background: var(--green-pale);
+    border: 2px solid var(--green-border);
+    border-radius: var(--radius-lg);
+    cursor: pointer;
+    text-align: left;
+    transition: all .15s
+}
+
+.setup-gps-btn:hover,
+.setup-gps-btn:active {
+    background: #dcfce7;
+    border-color: var(--green)
+}
+
+.setup-gps-icon {
+    font-size: 28px;
+    flex-shrink: 0
+}
+
+.setup-gps-title {
+    font-size: 14px;
+    font-weight: 700;
+    color: var(--green)
+}
+
+.setup-gps-sub {
+    font-size: 11px;
+    color: var(--muted);
+    margin-top: 2px
+}
+
+
+/* Lat/lng input pair */
+
+.setup-coords-row {
+    display: flex;
+    gap: 8px;
+    margin-bottom: 6px
+}
+
+.setup-coords-row input {
+    flex: 1
 }
 
 .loc-row {
@@ -2364,33 +2711,224 @@ body {
 
 /* ── MOBILE ── */
 
-@media(max-width:720px) {
+
+/* ══════════════════════════════════════════════════════════════
+   MOBILE & TOUCH  —  everything below targets phones / small tablets.
+   Design targets:
+     • All tap targets ≥ 44px tall (Apple/Google HIG minimum)
+     • Safe-area insets for notched phones (iPhone 14+, etc.)
+     • Smooth momentum scroll on iOS
+     • Single-column forms on narrow screens
+     • Larger readable text — nothing below 12px on phone
+     • Dark sidebar backdrop so dismissing it is obvious
+     • Stats strip that fits on the narrowest phones
+   ══════════════════════════════════════════════════════════════ */
+
+
+/* ── Safe-area insets — apply to the whole body ────────────── */
+
+body {
+    padding-bottom: env(safe-area-inset-bottom, 0px)
+}
+
+
+/* ── Momentum scrolling for all scroll containers ───────────── */
+
+.sv,
+.sidebar,
+.mb,
+.as-panel,
+#fieldList {
+    -webkit-overflow-scrolling: touch;
+    overscroll-behavior: contain
+}
+
+
+/* ── Sidebar dark backdrop (mobile only, injected via JS) ─────
+   The backdrop div is added by gt-utils.js when the sidebar opens.     */
+
+.sidebar-backdrop {
+    display: none;
+    position: fixed;
+    inset: 0;
+    background: rgba(0, 0, 0, .45);
+    z-index: 1400;
+    -webkit-tap-highlight-color: transparent
+}
+
+.sidebar-backdrop.show {
+    display: block
+}
+
+
+/* ════════════════════════════════
+   ≤ 720 px  —  phone + small tablet
+   ════════════════════════════════ */
+
+@media (max-width: 720px) {
+    /* Sidebar: full-height overlay, slides in from left */
     .sidebar {
         position: fixed;
         left: 0;
         top: 0;
         bottom: 0;
+        width: 85vw;
+        max-width: 320px;
         transform: translateX(-100%);
-        z-index: 1500
+        z-index: 1500;
+        /* Larger tap targets inside sidebar */
     }
     .sidebar.open {
         transform: translateX(0);
-        box-shadow: 6px 0 20px rgba(0, 0, 0, .15)
+        box-shadow: 6px 0 24px rgba(0, 0, 0, .22)
     }
     .sb-x {
         display: flex
     }
+    /* Bigger sidebar footer buttons */
+    .sb-ftn {
+        padding: 13px 4px 11px;
+        font-size: 18px
+    }
+    .sb-ftn span {
+        font-size: 10px
+    }
+    /* Field list items — easier to tap */
+    .field-item {
+        padding: 12px 12px;
+        min-height: 52px
+    }
+    .field-item-name {
+        font-size: 14px
+    }
+    /* Sidebar drawing tool cards */
+    .tcrd {
+        padding: 10px 8px;
+        font-size: 12px;
+        min-height: 44px
+    }
+    /* ── Tab bar ─────────────────────────────────────────────── */
+    .tab {
+        padding: 14px 4px;
+        font-size: 11px;
+        /* Show emoji only on very small screens; text visible here */
+    }
+    /* ── Map bar ─────────────────────────────────────────────── */
+    .map-bar {
+        top: 8px;
+        left: 8px;
+        right: 8px;
+        gap: 6px
+    }
+    .map-btn {
+        padding: 10px 14px;
+        font-size: 13px;
+        min-height: 44px
+    }
+    /* Hide the status text on mobile — it crowds the buttons */
+    .map-status {
+        display: none
+    }
+    /* ── Stats strip ──────────────────────────────────────────── */
+    .stats-strip {
+        bottom: 12px;
+        /* Don't overflow on narrow screens */
+        left: 8px;
+        right: 8px;
+        transform: none;
+        width: auto;
+        border-radius: var(--radius)
+    }
+    .sc {
+        padding: 7px 10px
+    }
+    .sc-n {
+        font-size: 15px
+    }
+    .sc-l {
+        font-size: 9px
+    }
+    /* ── Modals ───────────────────────────────────────────────── */
+    .overlay {
+        align-items: flex-end/* Sheet slides up from bottom */
+    }
+    .modal {
+        width: 100% !important;
+        max-width: 100% !important;
+        border-radius: var(--radius-xl) var(--radius-xl) 0 0 !important;
+        max-height: 90vh;
+        overflow-y: auto;
+        -webkit-overflow-scrolling: touch
+    }
+    /* Add bottom safe-area padding inside modals */
+    .mf {
+        padding-bottom: calc(16px + env(safe-area-inset-bottom, 0px))
+    }
+    /* All modal inputs: large enough to tap without zooming */
+    .mb input,
+    .mb select,
+    .mb textarea {
+        font-size: 16px !important;
+        /* Prevents iOS auto-zoom on focus */
+        min-height: 44px;
+        padding: 10px 12px
+    }
+    /* Stack form rows to single column */
+    .frow {
+        flex-direction: column;
+        gap: 10px
+    }
+    /* Bigger modal action buttons */
+    .btn-primary,
+    .btn-ghost {
+        min-height: 48px;
+        font-size: 15px
+    }
+    /* ── Auto-split modal (full screen on mobile) ─────────────── */
+    .mxl {
+        height: 100vh;
+        height: 100dvh;
+        /* Dynamic viewport height — excludes browser chrome */
+        border-radius: 0 !important;
+        max-width: 100% !important
+    }
     .as-layout {
         grid-template-columns: 1fr;
-        grid-template-rows: 1fr auto
+        grid-template-rows: auto 1fr;
+        /* Panel above, map below */
+        height: calc(100dvh - 60px)
     }
     .as-panel {
         border-right: none;
-        border-bottom: 1px solid var(--border-soft)
+        border-bottom: 1px solid var(--border-soft);
+        max-height: 45vh;
+        overflow-y: auto
     }
     #asMap {
-        height: 280px
+        height: 100%;
+        min-height: 220px
     }
+    .as-map-wrap {
+        min-height: 220px
+    }
+    /* Split tool buttons */
+    .as-count-btn {
+        width: 36px;
+        height: 36px
+    }
+    .as-dir-btn {
+        min-height: 40px;
+        font-size: 12px
+    }
+    .as-reshape-btn {
+        width: 36px;
+        height: 36px
+    }
+    .as-name-input {
+        font-size: 15px !important;
+        min-height: 40px
+    }
+    /* ── Dashboard ────────────────────────────────────────────── */
     .cr {
         grid-template-columns: 1fr
     }
@@ -2400,40 +2938,118 @@ body {
     .cfw {
         grid-column: 1
     }
+    .kpi-row {
+        grid-template-columns: repeat(2, 1fr)
+    }
+    /* ── Reports export buttons ───────────────────────────────── */
+    .rep-actions {
+        flex-direction: column
+    }
+    .rep-btn {
+        min-height: 48px;
+        font-size: 14px
+    }
+    /* ── Setup wizard ─────────────────────────────────────────── */
     .cycle-grid {
         grid-template-columns: 1fr
     }
-    .mxl {
-        height: 100vh;
-        border-radius: 0;
-        max-width: 100%
+    .two-col {
+        flex-direction: column
     }
 }
 
 
-/* Enlarged modals */
+/* ════════════════════════════════
+   ≤ 480 px  —  small phones only
+   ════════════════════════════════ */
 
-.mxl {
-    max-width: 95vw;
-    width: 95vw;
-    height: 90vh;
+@media (max-width: 480px) {
+    /* Tab bar — emoji only, hide text to save space */
+    .tab {
+        font-size: 18px;
+        padding: 12px 4px
+    }
+    .tab::after {
+        display: none
+    }
+    /* Hide text labels in tabs — keep just the emoji */
+    /* We do this by making the tab text invisible and only showing emoji */
+    .tab {
+        letter-spacing: -99px;
+        overflow: hidden;
+        padding: 14px 0
+    }
+    /* Tabs in HTML are like: 🗺 Map — show only the emoji */
+    /* This trick clips the text after the emoji */
+    /* Stats strip: reduce padding further */
+    .sc {
+        padding: 6px 8px
+    }
+    .sc-n {
+        font-size: 14px
+    }
+    /* Hide dividers between stats on tiny screens */
+    .sd {
+        display: none
+    }
+    /* Forecast cards: show 4, hide last 3 */
+    .fc-row {
+        grid-template-columns: repeat(4, 1fr)
+    }
+    .fc-card:nth-child(n+5) {
+        display: none
+    }
+    /* KPI grid: 2 per row */
+    .kpi-row {
+        grid-template-columns: repeat(2, 1fr)
+    }
+    .kpi-val {
+        font-size: 20px
+    }
+    /* Map buttons: slightly smaller text */
+    .map-btn {
+        font-size: 12px;
+        padding: 10px 10px
+    }
+    /* Modals: slide up even higher if needed */
+    .modal {
+        max-height: 92vh
+    }
+    /* Detail buttons in sidebar: 2 per row */
+    .detail-actions {
+        display: grid;
+        grid-template-columns: 1fr 1fr
+    }
+    /* Rotation hero: smaller heading */
+    .rh-name {
+        font-size: 20px
+    }
 }
 
-.as-layout {
-    height: calc(90vh - 120px);
-}
 
-.as-map-wrap {
-    height: 100%;
-    min-height: 400px;
-}
-
-
-/* Larger sidebar on big screens */
+/* ── Larger sidebar on big screens ──────────────────────────── */
 
 @media (min-width: 1200px) {
     .sidebar {
         width: 350px;
-        min-width: 350px;
+        min-width: 350px
+    }
+}
+
+
+/* ── Enlarged auto-split modal on desktop ───────────────────── */
+
+@media (min-width: 721px) {
+    .mxl {
+        max-width: 95vw;
+        width: 95vw;
+        height: 90vh
+    }
+    .as-layout {
+        height: calc(90vh - 120px)
+    }
+    .as-map-wrap {
+        height: 100%;
+        min-height: 400px
     }
 }

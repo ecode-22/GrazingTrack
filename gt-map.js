@@ -64,12 +64,9 @@ function initMap() {
         vertexCount = pts.length;
         updateUndoBtn();
         if (pts.length >= 3) {
-            const geo = {
-                type: 'Polygon',
-                coordinates: [
+            const geo = { type: 'Polygon', coordinates: [
                     [...pts, pts[0]].map(p => [p.lng, p.lat])
-                ]
-            };
+                ] };
             setStatus(`Drawing — ${pts.length} points · ~${calcAreaHa(geo).toFixed(1)} ha · double-click to finish`);
         } else {
             setStatus(`Drawing — ${pts.length} point${pts.length !== 1 ? 's' : ''} placed · need at least 3`);
@@ -265,10 +262,8 @@ function styleLayer(layer, field) {
 function bindFieldLayer(layer, field) {
     layer.options.fieldId = field.id;
     layer.off('click');
-    layer.on('click', e => {
-        L.DomEvent.stopPropagation(e);
-        selectField(field.id);
-    });
+    layer.on('click', e => { L.DomEvent.stopPropagation(e);
+        selectField(field.id); });
     layer.unbindTooltip();
     layer.bindTooltip(
         `<strong>${field.name}</strong><br>${field.areaHa.toFixed(1)} ha`, { permanent: true, direction: 'center', className: 'field-label' }
@@ -279,11 +274,10 @@ function bindFieldLayer(layer, field) {
 function deleteSelected() {
     if (!selectedFieldId) return;
     const field = loadFields().find(f => f.id === selectedFieldId);
-    if (!field || !confirm(`Delete "${field.name}"?\nAll grazing events and moisture readings will also be deleted.`)) return;
+    if (!field || !confirm(`Delete "${field.name}"?\nAll grazing events will also be deleted.`)) return;
     drawnItems.eachLayer(l => { if (l.options.fieldId === selectedFieldId) drawnItems.removeLayer(l); });
     saveFields(loadFields().filter(f => f.id !== selectedFieldId));
     saveEvents(loadEvents().filter(e => e.fieldId !== selectedFieldId));
-    saveMoisture(loadMoisture().filter(m => m.fieldId !== selectedFieldId));
     deselectField();
     renderFieldList();
     updateStats();
@@ -321,8 +315,7 @@ function selectField(fieldId) {
         ${stockHTML}
         <div class="detail-actions">
             <button class="detail-btn edit"    onclick="openEditFieldModal('${fieldId}')">✎ Edit</button>
-            <button class="detail-btn"          onclick="openHistoryModal('${fieldId}')">History</button>
-            <button class="detail-btn"          onclick="openMoistureModal('${fieldId}')">💧</button>
+            <button class="detail-btn"          onclick="openHistoryModal('${fieldId}')">📋 History</button>
             <button class="detail-btn primary"  onclick="openGrazingModal('${fieldId}')">+ Graze</button>
         </div>`;
     document.getElementById('btnDelete').style.display = 'flex';
@@ -468,14 +461,17 @@ function loadFarmConfig() {
         if (cfg.lat && cfg.lng && map) map.setView([cfg.lat, cfg.lng], 14);
         if (cfg.cycle === 'daynight' || cfg.grazingCycle === 'daynight')
             localStorage.setItem('gt_daynight', '1');
-        // applySetupToApp saves as animalGroups; support old 'groups' key too.
-        const groups = cfg.animalGroups || cfg.groups || [];
-        if (groups.length) window._animalGroups = groups;
+        // Load animal groups via loadGroups() which handles both the new
+        // gt_groups key and the legacy gt_config.animalGroups fallback.
+        window._animalGroups = loadGroups();
     } catch (e) {}
 }
 
 // ── Boot ──────────────────────────────────────────────────────
-// All scripts are loaded at this point — safe to start the app.
+// gt-map.js executes before setup.js is parsed, so checkFirstRun()
+// is not yet defined at this line. Wrapping it in an arrow function
+// defers the name lookup until the timer fires — by which time every
+// script including setup.js has fully loaded.
 initMap();
 loadFarmConfig();
-setTimeout(checkFirstRun, 400); // checkFirstRun is defined in setup.js
+setTimeout(() => checkFirstRun(), 600);

@@ -8,7 +8,6 @@
 function renderDashboard() {
     const fields = loadFields();
     const events = loadEvents();
-    const moisture = loadMoisture();
     const today = todayStr();
     const thisMonth = today.slice(0, 7);
     const totalHa = fields.reduce((s, f) => s + f.areaHa, 0);
@@ -77,27 +76,107 @@ function renderDashboard() {
         `<div class="card-title">Stocking rates</div>` +
         (si.length ? si.join('') : '<p style="color:#9ca3af;font-size:12px">No events yet.</p>');
 
-    const mByF = {};
-    moisture.forEach(r => { if (!mByF[r.fieldId] || r.date > mByF[r.fieldId].date) mByF[r.fieldId] = r; });
-    const mRows = fields.map(f => {
-        const r = mByF[f.id];
-        if (!r) return `<tr><td>${f.name}</td><td colspan="3" style="color:#9ca3af">No readings</td></tr>`;
-        const bar = `<div style="height:5px;background:#f0ede7;border-radius:4px;overflow:hidden;margin-top:2px">
-            <div style="width:${r.moisture_pct}%;height:100%;background:#60a5fa;border-radius:4px"></div>
-        </div>`;
-        return `<tr><td>${f.name}</td><td>${r.moisture_pct}%${bar}</td><td>${r.depth_cm}cm</td><td>${fmtDate(r.date)}</td></tr>`;
-    });
-    document.getElementById('dashSoilMoisture').innerHTML = `
-        <div class="card-title">Soil moisture — latest readings
-            <button class="detail-btn" style="float:right;padding:3px 8px;font-size:10px"
-                onclick="openMoistureModal(null)">+ Add</button>
-        </div>
-        ${fields.length
-            ? `<table class="htbl"><thead><tr><th>Field</th><th>Moisture</th><th>Depth</th><th>Date</th></tr></thead>
-               <tbody>${mRows.join('')}</tbody></table>`
-            : '<p style="color:#9ca3af;font-size:12px">No fields yet.</p>'}`;
-
+    renderAnimalGroupsCard();
     fetchRainfall();
+}
+
+// ── Animal Groups card ────────────────────────────────────────
+function renderAnimalGroupsCard() {
+    const el = document.getElementById('dashAnimalGroups');
+    if (!el) return;
+    const groups = loadGroups();
+
+    el.innerHTML = `
+        <div class="card-title">
+            🐄 Animal Groups
+            <button class="grp-add-btn" onclick="openGroupModal(null)">+ Add group</button>
+        </div>
+        ${!groups.length
+            ? `<div class="grp-empty-card">
+                <p>No animal groups yet.</p>
+                <p style="font-size:11px;color:var(--faint);margin-top:4px">
+                    Groups let you log grazing with one tap — the animal type, count and herd fill in automatically.
+                </p>
+                <button class="btn-primary" style="margin-top:12px;width:100%" onclick="openGroupModal(null)">
+                    + Add your first group
+                </button>
+               </div>`
+            : `<div class="grp-list">
+                ${groups.map(g => `
+                <div class="grp-row">
+                    <div class="grp-row-icon">${_groupEmoji(g.type)}</div>
+                    <div class="grp-row-info">
+                        <div class="grp-row-name">${g.name}</div>
+                        <div class="grp-row-sub">${g.count} ${g.type}${g.herd ? ' · ' + g.herd : ''}</div>
+                    </div>
+                    <div class="grp-row-actions">
+                        <button class="grp-btn" onclick="openGroupModal('${g.id}')" title="Edit">✎</button>
+                        <button class="grp-btn red" onclick="deleteGroup('${g.id}')" title="Delete">✕</button>
+                    </div>
+                </div>`).join('')}
+               </div>`}`;
+}
+
+function _groupEmoji(type) {
+    const map = { cattle:'🐄', sheep:'🐑', goats:'🐐', horses:'🐎', pigs:'🐷', mixed:'🐾' };
+    return map[(type||'').toLowerCase()] || '🐾';
+}
+
+// ── Group modal CRUD ──────────────────────────────────────────
+function openGroupModal(id) {
+    const groups = loadGroups();
+    const g      = id ? groups.find(x => x.id === id) : null;
+
+    document.getElementById('groupModalTitle').textContent = g ? '✎ Edit group' : '🐄 Add animal group';
+    document.getElementById('groupEditId').value  = g ? g.id : '';
+    document.getElementById('groupName').value    = g ? g.name  : '';
+    document.getElementById('groupType').value    = g ? g.type  : '';
+    document.getElementById('groupCount').value   = g ? g.count : '';
+    document.getElementById('groupHerd').value    = g ? (g.herd || '') : '';
+
+    openModal('modalGroup');
+    setTimeout(() => document.getElementById('groupName').focus(), 80);
+}
+
+function saveGroup() {
+    const name   = document.getElementById('groupName').value.trim();
+    const type   = document.getElementById('groupType').value.trim();
+    const count  = parseInt(document.getElementById('groupCount').value);
+    const herd   = document.getElementById('groupHerd').value.trim();
+    const editId = document.getElementById('groupEditId').value;
+
+    if (!name)               { alert('Enter a group name.'); return; }
+    if (!type)               { alert('Enter an animal type.'); return; }
+    if (!count || count < 1) { alert('Enter a valid number of animals.'); return; }
+
+    const groups = loadGroups();
+    let savedId  = editId;
+
+    if (editId) {
+        const idx = groups.findIndex(g => g.id === editId);
+        if (idx !== -1) groups[idx] = { ...groups[idx], name, type, count, herd };
+    } else {
+        savedId = 'grp-' + uid();
+        groups.push({ id: savedId, name, type, count, herd });
+    }
+
+    saveGroups(groups);
+    closeModal('modalGroup');
+    renderAnimalGroupsCard();
+
+    // If opened from within the grazing modal, refresh the picker
+    // and auto-select the group that was just created/edited.
+    if (window._addingGroupFromGrazing) {
+        _groupSavedFromGrazing(savedId);
+    }
+}
+
+function deleteGroup(id) {
+    const groups = loadGroups();
+    const g      = groups.find(x => x.id === id);
+    if (!g || !confirm(`Delete group "${g.name}"?`)) return;
+    saveGroups(groups.filter(x => x.id !== id));
+    renderAnimalGroupsCard();
 }
 
 // ── Rainfall & 7-day forecast ─────────────────────────────────
@@ -407,7 +486,7 @@ function exportJSON() {
         exportedAt: new Date().toISOString(),
         fields:     loadFields(),
         events:     loadEvents(),
-        moisture:   loadMoisture()
+        groups:     loadGroups()
     }, null, 2), 'application/json');
 }
 
@@ -454,10 +533,9 @@ function importJSON(event) {
         try {
             const data = JSON.parse(e.target.result);
             if (!Array.isArray(data.fields) || !Array.isArray(data.events)) throw new Error();
-            if (!confirm(`Import ${data.fields.length} fields, ${data.events.length} events, ${(data.moisture || []).length} moisture readings?\nThis replaces all current data.`)) return;
+            if (!confirm(`Import ${data.fields.length} fields and ${data.events.length} events?\nThis replaces all current data.`)) return;
             saveFields(data.fields);
             saveEvents(data.events);
-            saveMoisture(data.moisture || []);
             colorIdx = data.fields.length % COLORS.length;
             drawnItems.clearLayers();
             restoreFieldsOnMap();
@@ -477,7 +555,7 @@ function importJSON(event) {
 
 function clearAllData() {
     if (!confirm('Delete ALL data? Export a backup first!\nThis cannot be undone.')) return;
-    ['gt_fields', 'gt_events', 'gt_moisture'].forEach(k => localStorage.removeItem(k));
+    ['gt_fields', 'gt_events', 'gt_groups'].forEach(k => localStorage.removeItem(k));
     drawnItems.clearLayers();
     colorIdx = 0;
     renderFieldList();
