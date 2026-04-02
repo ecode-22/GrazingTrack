@@ -64,9 +64,12 @@ function initMap() {
         vertexCount = pts.length;
         updateUndoBtn();
         if (pts.length >= 3) {
-            const geo = { type: 'Polygon', coordinates: [
+            const geo = {
+                type: 'Polygon',
+                coordinates: [
                     [...pts, pts[0]].map(p => [p.lng, p.lat])
-                ] };
+                ]
+            };
             setStatus(`Drawing — ${pts.length} points · ~${calcAreaHa(geo).toFixed(1)} ha · double-click to finish`);
         } else {
             setStatus(`Drawing — ${pts.length} point${pts.length !== 1 ? 's' : ''} placed · need at least 3`);
@@ -262,8 +265,10 @@ function styleLayer(layer, field) {
 function bindFieldLayer(layer, field) {
     layer.options.fieldId = field.id;
     layer.off('click');
-    layer.on('click', e => { L.DomEvent.stopPropagation(e);
-        selectField(field.id); });
+    layer.on('click', e => {
+        L.DomEvent.stopPropagation(e);
+        selectField(field.id);
+    });
     layer.unbindTooltip();
     layer.bindTooltip(
         `<strong>${field.name}</strong><br>${field.areaHa.toFixed(1)} ha`, { permanent: true, direction: 'center', className: 'field-label' }

@@ -22,7 +22,7 @@ function openGrazingModal(preFieldId) {
     const today = todayStr();
     document.getElementById('gStart').value = today;
     document.getElementById('gEnd').value = addDays(today, 7);
-    document.getElementById('gAnimalType').value = '';
+    document.getElementById('gAnimalType').value = 'cattle';
     document.getElementById('gCount').value = '';
     document.getElementById('gHerd').value = '';
     document.getElementById('gNotes').value = '';
@@ -31,6 +31,14 @@ function openGrazingModal(preFieldId) {
     // Render group cards then open
     _renderGroupPicker();
     openModal('modalGrazing');
+
+    // Focus on count input for quick entry
+    setTimeout(() => {
+        const manualInputs = document.getElementById('gManualInputs');
+        if (manualInputs && manualInputs.style.display !== 'none') {
+            document.getElementById('gCount').focus();
+        }
+    }, 100);
 
     // Stale-listener guard
     const gCount = document.getElementById('gCount');
@@ -43,28 +51,29 @@ function openGrazingModal(preFieldId) {
 
 // ── Group picker inside the grazing modal ─────────────────────
 // Shows one card per group. Tapping a card fills type/count/herd.
-// When no groups exist, shows a big "Add group" button right there
-// — no need to leave the modal.
+// When no groups exist, shows manual inputs directly.
 function _renderGroupPicker() {
     const groups = loadGroups();
     const wrap = document.getElementById('gGroupPicker');
+    const manualInputs = document.getElementById('gManualInputs');
     if (!wrap) return;
 
     if (!groups.length) {
         wrap.innerHTML = `
             <div class="grp-none">
-                <p class="grp-none-msg">You have no animal groups yet.</p>
+                <p class="grp-none-msg">No saved animal groups yet</p>
                 <button class="grp-none-add" onclick="openGroupModalFromGrazing()">
-                    + Create your first group
+                    + Create an animal group
                 </button>
-                <p class="grp-none-or">or fill in manually below</p>
+                <p class="grp-none-or">Fill in manually below</p>
             </div>`;
         // Always show manual inputs so the farmer isn't blocked
-        document.getElementById('gManualInputs').style.display = 'block';
+        if (manualInputs) manualInputs.style.display = 'block';
         return;
     }
 
     wrap.innerHTML = `
+        <div class="grp-header">Select a group or enter manually:</div>
         <div class="grp-cards" id="gGroupCards">
             ${groups.map(g => `
             <button class="grp-card" data-id="${g.id}" onclick="_selectGroup('${g.id}')">
@@ -75,12 +84,12 @@ function _renderGroupPicker() {
             <button class="grp-card grp-card-manual" onclick="_selectManual()">
                 <div class="grp-card-icon">✎</div>
                 <div class="grp-card-name">Manual</div>
-                <div class="grp-card-sub">Enter yourself</div>
+                <div class="grp-card-sub">Enter details</div>
             </button>
         </div>`;
 
-    // Hide manual inputs until a group or manual is chosen
-    document.getElementById('gManualInputs').style.display = 'none';
+    // Show manual inputs immediately for faster workflow
+    if (manualInputs) manualInputs.style.display = 'block';
 }
 
 // Opens the group add modal while keeping the grazing modal open.

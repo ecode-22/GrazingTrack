@@ -75,8 +75,10 @@ function openAutoSplit() {
 }
 
 function closeAutoSplit() {
-    if (AS._refreshTimer) { clearTimeout(AS._refreshTimer);
-        AS._refreshTimer = null; }
+    if (AS._refreshTimer) {
+        clearTimeout(AS._refreshTimer);
+        AS._refreshTimer = null;
+    }
     _asFinishReshape(false);
     closeModal('modalAutoSplit');
     _asDestroyMap();
@@ -86,8 +88,10 @@ function asDestroyMap() { _asDestroyMap(); }
 
 // ── Map setup ─────────────────────────────────────────────────
 function _asInitMap() {
-    if (AS.map) { try { AS.map.remove(); } catch (e) {}
-        AS.map = null; }
+    if (AS.map) {
+        try { AS.map.remove(); } catch (e) {}
+        AS.map = null;
+    }
 
     let center = [-29, 25],
         zoom = 6;
@@ -106,8 +110,10 @@ function _asInitMap() {
     } else {
         try {
             const cfg = JSON.parse(localStorage.getItem('gt_config') || '{}');
-            if (cfg.lat) { center = [cfg.lat, cfg.lng];
-                zoom = 14; }
+            if (cfg.lat) {
+                center = [cfg.lat, cfg.lng];
+                zoom = 14;
+            }
         } catch (e) {}
     }
 
@@ -155,8 +161,10 @@ function _asInitMap() {
 }
 
 function _asDestroyMap() {
-    if (AS.map) { try { AS.map.remove(); } catch (e) {}
-        AS.map = null; }
+    if (AS.map) {
+        try { AS.map.remove(); } catch (e) {}
+        AS.map = null;
+    }
     AS.drawn = null;
     AS.boundaryLayer = null;
     AS.drawControl = null;

@@ -88,58 +88,36 @@ function renderSetupStep() {
 
 // ── STEP 1: Farm name & location ──────────────────────────────
 function renderStep1(title, body) {
-    title.textContent = '🌿 Welcome to GrazingTrack';
+    title.textContent = '🌿 Welcome — let\'s set up your farm';
     body.innerHTML = `
-    <p class="setup-desc">Free rotational grazing management — right on your phone. Let's take 2 minutes to set up your farm. You can change everything later.</p>
+    <p class="setup-desc">GrazingTrack will ask a few quick questions to personalise the app for how you farm. You can change any of this later in Settings.</p>
 
     <div class="setup-field">
-      <label>Farm name <span class="setup-opt">required</span></label>
-      <input type="text" id="s1Name" placeholder="e.g. Riverside Farm"
-             value="${setupData.farmName}" maxlength="50" autocomplete="off">
+      <label>Farm name</label>
+      <input type="text" id="s1Name" placeholder="e.g. Riverside Farm" value="${setupData.farmName}" maxlength="50">
     </div>
 
     <div class="setup-field">
-      <label>Your farm location</label>
-      <button class="setup-gps-btn" onclick="autoLocate()" id="gpsBtn">
-        <span class="setup-gps-icon">📍</span>
-        <div>
-          <div class="setup-gps-title">Use my current location</div>
-          <div class="setup-gps-sub">Centres the map on your farm automatically</div>
-        </div>
-      </button>
-      <div class="setup-coords-row">
-        <input type="number" id="s1Lat" placeholder="Latitude e.g. -26.20"
-               value="${setupData.farmLocation.lat || ''}" step="any">
-        <input type="number" id="s1Lng" placeholder="Longitude e.g. 28.04"
-               value="${setupData.farmLocation.lng || ''}" step="any">
+      <label>Your location <span class="setup-optional">(helps centre the map on your farm)</span></label>
+      <div class="location-row">
+        <input type="text" id="s1Lat" placeholder="Latitude e.g. -26.20" value="${setupData.farmLocation.lat || ''}">
+        <input type="text" id="s1Lng" placeholder="Longitude e.g. 28.04" value="${setupData.farmLocation.lng || ''}">
+        <button class="setup-locate-btn" onclick="autoLocate()">📍 Use GPS</button>
       </div>
-      <small>💡 Or open Google Maps, long-press your farm, and copy the numbers at the top.</small>
-    </div>`;
+      <small>Or leave blank — you can pan the map to your farm in the next steps.</small>
+    </div>
 
-    // Auto-focus the farm name input after render
-    setTimeout(() => {
-        const el = document.getElementById('s1Name');
-        if (el) el.focus();
-    }, 100);
+    <div class="setup-tip">
+      💡 <strong>Tip:</strong> Open Google Maps, right-click your farm, and copy the coordinates shown at the top of the menu.
+    </div>`;
 }
 
 function autoLocate() {
-    const btn = document.getElementById('gpsBtn');
-    if (btn) btn.textContent = '⏳ Getting location…';
-    if (!navigator.geolocation) {
-        if (btn) btn.innerHTML = `<span class="setup-gps-icon">📍</span><div><div class="setup-gps-title">GPS not available</div><div class="setup-gps-sub">Enter coordinates manually below</div></div>`;
-        return;
-    }
-    navigator.geolocation.getCurrentPosition(
-        pos => {
-            document.getElementById('s1Lat').value = pos.coords.latitude.toFixed(5);
-            document.getElementById('s1Lng').value = pos.coords.longitude.toFixed(5);
-            if (btn) btn.innerHTML = `<span class="setup-gps-icon">✅</span><div><div class="setup-gps-title">Location found!</div><div class="setup-gps-sub">${pos.coords.latitude.toFixed(3)}, ${pos.coords.longitude.toFixed(3)}</div></div>`;
-        },
-        () => {
-            if (btn) btn.innerHTML = `<span class="setup-gps-icon">📍</span><div><div class="setup-gps-title">Could not get location</div><div class="setup-gps-sub">Enter coordinates manually below</div></div>`;
-        }, { timeout: 10000 }
-    );
+    if (!navigator.geolocation) { alert('GPS not available on this device.'); return; }
+    navigator.geolocation.getCurrentPosition(pos => {
+        document.getElementById('s1Lat').value = pos.coords.latitude.toFixed(5);
+        document.getElementById('s1Lng').value = pos.coords.longitude.toFixed(5);
+    }, () => alert('Could not get location. Enter coordinates manually.'));
 }
 
 function validateStep1() {
@@ -451,8 +429,7 @@ function drawCampSplits() {
 
   grid.features.forEach((cell, i) => {
     if (intersections.length >= n) return;
-    // Turf v6 API: two separate arguments, NOT a FeatureCollection wrapper
-    const intersect = turf.intersect(farmPoly, cell);
+    const intersect = turf.intersect(turf.featureCollection([farmPoly, cell]));
     if (intersect) {
       intersections.push(intersect);
     }
@@ -619,8 +596,8 @@ function applySetupToApp() {
   };
   localStorage.setItem('gt_config', JSON.stringify(config));
 
-  // Update farm name in sidebar — the element is #farmNameDisplay, not .farm-subtitle
-  const subtitle = document.getElementById('farmNameDisplay');
+  // Update farm name in UI
+  const subtitle = document.querySelector('.farm-subtitle');
   if (subtitle && setupData.farmName) subtitle.textContent = setupData.farmName;
 
   // Move map to farm location if set
@@ -683,13 +660,7 @@ function uid_setup() {
 }
 
 function calcAreaHa_setup(geometry) {
-  if (!geometry) return 0;
-  // turf.intersect can return MultiPolygon for complex shapes — sum all sub-polygons
-  if (geometry.type === 'MultiPolygon') {
-    return geometry.coordinates.reduce((sum, ring) =>
-      sum + calcAreaHa_setup({ type: 'Polygon', coordinates: ring }), 0);
-  }
-  if (geometry.type !== 'Polygon') return 0;
+  if (!geometry || geometry.type !== 'Polygon') return 0;
   const coords = geometry.coordinates[0];
   const R = 6371000; let area = 0;
   for (let i = 0; i < coords.length - 1; i++) {
