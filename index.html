@@ -1,5 +1,4 @@
-
-<!DOCTYPE html>
+<!DOCTYPE html>f
 <html lang="en">
 
 <head>
@@ -125,9 +124,9 @@
                     <div class="card clg" id="dashRecentEvents"></div>
                     <div class="card" id="dashStocking"></div>
                 </div>
-                <div class="cr">
+                <!--<div class="cr">
                     <div class="card cfw" id="dashSoilMoisture"></div>
-                </div>
+                </div>-->
             </div>
         </div>
 
@@ -297,7 +296,7 @@
         </div>
     </div>
 
-    <!-- SOIL MOISTURE -->
+    <!-- SOIL MOISTURE 
     <div class="overlay" id="modalMoisture" style="display:none">
         <div class="modal msm">
             <div class="mh">
@@ -316,7 +315,7 @@
             </div>
             <div class="mf"><button class="btn-ghost" onclick="closeModal('modalMoisture')">Cancel</button><button class="btn-primary" onclick="saveMoistureReading()">Save reading</button></div>
         </div>
-    </div>
+    </div>--> 
 
     <!-- EXPORT -->
     <div class="overlay" id="modalExport" style="display:none">
@@ -329,7 +328,6 @@
                     <button class="exp-row" onclick="exportJSON()"><span>💾</span><div><b>JSON backup</b><small>Full restore, all data</small></div></button>
                     <button class="exp-row" onclick="exportGeoJSON()"><span>🗺</span><div><b>GeoJSON fields</b><small>QGIS, ArcGIS, Google Earth</small></div></button>
                     <button class="exp-row" onclick="exportCSV()"><span>📊</span><div><b>Events CSV</b><small>Excel, LibreOffice, Sheets</small></div></button>
-                    <button class="exp-row" onclick="exportSensorCSV()"><span>🌱</span><div><b>Sensor CSV</b><small>Soil moisture readings</small></div></button>
                     <label class="exp-row"><span>⬆</span><div><b>Import JSON backup</b><small>Restore previous backup</small></div><input type="file" accept=".json" id="importFile" onchange="importJSON(event)" style="display:none"></label>
                     <label class="exp-row"><span>📡</span><div><b>Import sensor JSON</b><small>DIY Arduino / Pi kit</small></div><input type="file" accept=".json" id="importSensor" onchange="importSensorJSON(event)" style="display:none"></label>
                 </div>
@@ -352,7 +350,6 @@
                     <div class="al">✅ Fence-line guided camp splitting</div>
                     <div class="al">✅ Day / Night dual grazing cycle</div>
                     <div class="al">✅ Live rainfall overlay (Open-Meteo, free)</div>
-                    <div class="al">✅ Soil moisture — manual or DIY sensor import</div>
                     <div class="al">✅ PDF farm report</div>
                     <div class="al">✅ GeoJSON export for QGIS and other GIS tools</div>
                     <div class="al">✅ Offline PWA — installs on phone and desktop</div>
