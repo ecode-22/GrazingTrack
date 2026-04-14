@@ -1,7 +1,7 @@
 // GrazingTrack Service Worker v3
 // Caches app shell for offline use + map tiles as you browse
 
-const CACHE_APP = 'gt-app-v3';
+const CACHE_APP = 'gt-app-v4';
 const CACHE_TILES = 'gt-tiles-v1';
 
 const APP_SHELL = [
@@ -75,4 +75,4 @@ self.addEventListener('fetch', e => {
             cached || fetch(e.request).catch(() => caches.match('/index.html'))
         )
     );
-});
+})

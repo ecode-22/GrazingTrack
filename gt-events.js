@@ -234,3 +234,11 @@ function historyAddEvent() {
     closeModal('modalHistory');
     openGrazingModal(historyFieldId);
 }
+// ── Quick log: open grazing modal pre-filled with a group ────────────────
+function openGrazingModalForGroup(groupId) {
+    switchTab('map');
+    setTimeout(() => {
+        openGrazingModal(null);
+        setTimeout(() => _selectGroup(groupId), 120);
+    }, 60);
+}
