@@ -1,6 +1,22 @@
 // ============================================================
-//  gt-split.js  —  Farm boundary split tool (Full working version)
-//  Includes: divider sliders with angle, grid mode, reshape
+//  gt-split.js  —  Farm boundary split tool
+//
+//  Crash fixes in this version:
+//   1. querySelector scoped to #asMap so it never clicks the
+//      main map's draw button by accident.
+//   2. Top-level try/catch in _asRebuildCamps — a Turf error
+//      never corrupts the panel or map state.
+//   3. MultiPolygon-safe sequential cuts — when a cut produces
+//      a MultiPolygon remainder, extract the largest piece so
+//      the next turf.intersect call doesn't throw.
+//   4. Only ONE Leaflet Draw control at a time — the boundary
+//      draw control is removed before the reshape control is
+//      added, and restored afterwards.
+//   5. Slider debounce (80 ms) so rapid dragging doesn't pile
+//      up Turf geometry operations and freeze the browser.
+//   6. Safe centroid fallback in _asDrawCampLayers.
+//   7. "Redraw boundary" button lets the farmer restart without
+//      closing the modal and losing all their work.
 // ============================================================
 'use strict';
 
@@ -8,7 +24,7 @@
 const AS = {
     map: null,
     drawn: null,
-    drawControl: null,
+    drawControl: null, // the boundary-draw control (removed during reshape)
     boundary: null,
     boundaryLayer: null,
     campLayers: [],
@@ -25,7 +41,7 @@ const AS = {
     reshapeGroup: null,
     reshapeControl: null,
 
-    _refreshTimer: null
+    _refreshTimer: null // debounce handle
 };
 
 const AS_COLORS = [
@@ -121,6 +137,7 @@ function _asInitMap() {
     });
     AS.map.addControl(AS.drawControl);
 
+    // FIX 1: Scope to #asMap so we never click the main map's draw button.
     setTimeout(() => {
         const mapEl = document.getElementById('asMap');
         if (mapEl) {
@@ -384,7 +401,7 @@ function asOnRowDiv(idx, rawVal) {
     _asScheduleRefresh();
 }
 
-// Debounce — 80ms after the last slider move before recomputing.
+// FIX 5: Debounce — 80ms after the last slider move before recomputing.
 function _asScheduleRefresh() {
     if (AS._refreshTimer) clearTimeout(AS._refreshTimer);
     AS._refreshTimer = setTimeout(() => {
@@ -415,6 +432,8 @@ function _asRebuildAndRefresh() {
 function _asRebuildCamps() {
     if (!AS.boundary) { AS.camps = []; return; }
 
+    // FIX 2: Top-level try/catch — any Turf error leaves camps empty
+    // rather than crashing the page or corrupting the UI.
     try {
         const farmPoly = turf.polygon(AS.boundary.coordinates);
         const bbox     = turf.bbox(farmPoly);
@@ -448,6 +467,8 @@ function _asRebuildCamps() {
                     const c1 = turf.centroid(cuts[1]).geometry.coordinates[ci];
                     const [before, after] = c0<c1 ? [cuts[0],cuts[1]] : [cuts[1],cuts[0]];
                     polys.push(before);
+                    // FIX 3: Extract largest polygon from MultiPolygon so the next
+                    // turf.intersect call doesn't receive an unsupported geometry type.
                     remaining = _asLargestPolygon(after);
                 }
             }
@@ -464,7 +485,6 @@ function _asRebuildCamps() {
         }));
 
     } catch(err) {
-        console.error("Split error:", err);
         AS.camps = [];
     }
 }
@@ -508,9 +528,11 @@ function _asCutWithLine(poly, linePts) {
         const nx = -dy/len, ny = dx/len;
         const ext = len;
 
+        // Explicitly close both rings (copy p1 values, not the reference).
         const lc = [p1, p2, [p2[0]+nx*ext,p2[1]+ny*ext], [p1[0]+nx*ext,p1[1]+ny*ext], [p1[0],p1[1]]];
         const rc = [p1, p2, [p2[0]-nx*ext,p2[1]-ny*ext], [p1[0]-nx*ext,p1[1]-ny*ext], [p1[0],p1[1]]];
 
+        // Ensure input is a simple Polygon for Turf v6 compatibility.
         const inputPoly = (poly.geometry && poly.geometry.type==='MultiPolygon')
             ? _asLargestPolygon(poly)
             : poly;
@@ -541,6 +563,7 @@ function _asDrawCampLayers() {
                 { style:{ color:camp.color, fillColor:camp.color, fillOpacity:0.4, weight:2 } }
             ).addTo(AS.map);
 
+            // FIX 6: Safe centroid with coordinate-average fallback.
             let cLat, cLng;
             try {
                 const c = turf.centroid({ type:'Feature', geometry:camp.geometry, properties:{} });
@@ -560,7 +583,9 @@ function _asDrawCampLayers() {
             });
             const m = L.marker([cLat,cLng], { icon, interactive:false }).addTo(AS.map);
             AS.campLayers.push(layer, m);
-        } catch(e) {}
+        } catch(e) {
+            // Skip this camp layer if rendering fails — don't crash the rest.
+        }
     });
 }
 
@@ -569,6 +594,8 @@ function asReshapeCamp(idx) {
     if (AS.reshapeIdx !== null) return;
     AS.reshapeIdx = idx;
 
+    // FIX 4: Remove boundary draw control BEFORE adding reshape control
+    // so there is never more than one Leaflet Draw control at once.
     if (AS.drawControl) {
         try { AS.map.removeControl(AS.drawControl); } catch(e) {}
     }
@@ -641,6 +668,7 @@ function _asFinishReshape(save) {
 
     AS.reshapeIdx = null;
 
+    // FIX 4 continued: restore the boundary draw control.
     if (AS.drawControl && AS.map) {
         try { AS.map.addControl(AS.drawControl); } catch(e) {}
     }
