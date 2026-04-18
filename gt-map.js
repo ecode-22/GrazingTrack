@@ -1,10 +1,10 @@
 // ============================================================
 //  gt-map.js  —  Map, field management, tools, tabs, boot
+//  Owns the main Leaflet map and everything related to fields:
+//  drawing, editing, selecting, deleting, styling, listing.
+//  Also owns tab switching and the app boot sequence.
 // ============================================================
 'use strict';
-
-// COLORS is defined in gt-data.js, but we need to ensure it's available
-// The functions that need COLORS will access the global variable.
 
 // ── Map state ─────────────────────────────────────────────────
 let map, drawnItems, drawControl;
@@ -18,17 +18,15 @@ function initMap() {
     map = L.map('map', { zoomControl: false }).setView([-29, 25], 6);
 
     const sat = L.tileLayer(
-        'https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}',
-        { attribution: 'Tiles © Esri', maxZoom: 19 }
+        'https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}', { attribution: 'Tiles © Esri', maxZoom: 19 }
     );
     const osm = L.tileLayer(
-        'https://tile.openstreetmap.org/{z}/{x}/{y}.png',
-        { attribution: '© OpenStreetMap', maxZoom: 19 }
+        'https://tile.openstreetmap.org/{z}/{x}/{y}.png', { attribution: '© OpenStreetMap', maxZoom: 19 }
     );
     const hyb = L.layerGroup([
         sat,
-        L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/Reference/World_Boundaries_and_Places/MapServer/tile/{z}/{y}/{x}',
-            { maxZoom: 19, opacity: 0.8 }
+        L.tileLayer(
+            'https://server.arcgisonline.com/ArcGIS/rest/services/Reference/World_Boundaries_and_Places/MapServer/tile/{z}/{y}/{x}', { maxZoom: 19, opacity: 0.8 }
         )
     ]);
     sat.addTo(map);
@@ -49,21 +47,22 @@ function initMap() {
         edit: { featureGroup: drawnItems, remove: false }
     });
 
+    // A new polygon was drawn — ask for its name before saving.
     map.on(L.Draw.Event.CREATED, e => {
         pendingLayer = e.layer;
         drawnItems.addLayer(pendingLayer);
         vertexCount = 0;
-        if (typeof updateUndoBtn === 'function') updateUndoBtn();
+        updateUndoBtn();
         openModal('modalName');
         setTimeout(() => document.getElementById('inName').focus(), 80);
     });
 
-    // Fixed syntax error here:
+    // Live area feedback while drawing.
     map.on('draw:drawvertex', e => {
         const pts = [];
         e.layers.eachLayer(l => pts.push(l.getLatLng()));
         vertexCount = pts.length;
-        if (typeof updateUndoBtn === 'function') updateUndoBtn();
+        updateUndoBtn();
         if (pts.length >= 3) {
             const geo = {
                 type: 'Polygon',
@@ -77,6 +76,7 @@ function initMap() {
         }
     });
 
+    // Vertex reshape finished — save the updated geometries.
     map.on(L.Draw.Event.EDITED, e => {
         e.layers.eachLayer(layer => {
             const fields = loadFields();
@@ -95,6 +95,7 @@ function initMap() {
     });
 
     map.on(L.Draw.Event.EDITSTOP, () => setTool('select'));
+    // Clicking the empty map deselects any selected field.
     map.on('click', () => { if (currentTool === 'select') deselectField(); });
 
     restoreFieldsOnMap();
@@ -115,25 +116,20 @@ function setTool(tool) {
         document.getElementById('btnDraw').classList.add('active');
         vertexCount = 0;
         map.addControl(drawControl);
-        setTimeout(() => {
-            const btn = document.querySelector('.leaflet-draw-draw-polygon');
-            if (btn) btn.click();
-        }, 60);
-        setStatus('Click to place corners · double-click to close · Esc to cancel');
-        document.getElementById('toolHint').textContent = 'Each click adds a corner. ↩ Undo removes the last point.';
+        setTimeout(() => { const b = document.querySelector('.leaflet-draw-draw-polygon'); if (b) b.click(); }, 60);
+        setStatus('Click to place corners · double-click (or first point) to close · Esc to cancel');
+        document.getElementById('toolHint').textContent = 'Each click adds a corner. ↩ Undo removes the last point. Double-click to finish.';
         if (eb) eb.style.display = 'none';
 
     } else if (tool === 'edit') {
         document.getElementById('btnEdit').classList.add('active');
         try { map.addControl(drawControl); } catch (e) {}
-        setTimeout(() => {
-            const btn = document.querySelector('.leaflet-draw-edit-edit');
-            if (btn) btn.click();
-        }, 60);
-        setStatus('Drag handles to reshape · click Save in toolbar when done');
+        setTimeout(() => { const b = document.querySelector('.leaflet-draw-edit-edit'); if (b) b.click(); }, 60);
+        setStatus('Drag handles to reshape · click Save in the map toolbar when done');
         if (ub) ub.style.display = 'none';
 
     } else {
+        // select mode (default)
         document.getElementById('btnSelect').classList.add('active');
         vertexCount = 0;
         try { map.removeControl(drawControl); } catch (e) {}
@@ -150,6 +146,8 @@ function updateUndoBtn() {
     if (b) b.style.display = (currentTool === 'draw' && vertexCount > 0) ? 'flex' : 'none';
 }
 
+// Modern browsers make keyCode read-only on synthetic events — override with
+// Object.defineProperty so Leaflet Draw's _onKeyDown sees keyCode 90.
 function undoLastVertex() {
     const evt = new KeyboardEvent('keydown', { key: 'z', code: 'KeyZ', ctrlKey: true, bubbles: true, cancelable: true });
     Object.defineProperty(evt, 'keyCode', { get: () => 90 });
@@ -216,6 +214,7 @@ function openEditFieldModal(fieldId) {
     document.getElementById('editType').value = field.type;
     document.getElementById('editRest').value = field.restTarget;
     document.getElementById('editMaxAU').value = field.maxAUperHa || '';
+    // Build colour swatches
     const picker = document.getElementById('editColorPicker');
     picker.innerHTML = COLORS.map(c => `
         <div class="color-swatch${c === field.color ? ' chosen' : ''}"
@@ -271,7 +270,9 @@ function bindFieldLayer(layer, field) {
         selectField(field.id);
     });
     layer.unbindTooltip();
-    layer.bindTooltip(`<strong>${field.name}</strong><br>${field.areaHa.toFixed(1)} ha`, { permanent: true, direction: 'center', className: 'field-label' });
+    layer.bindTooltip(
+        `<strong>${field.name}</strong><br>${field.areaHa.toFixed(1)} ha`, { permanent: true, direction: 'center', className: 'field-label' }
+    );
 }
 
 // ── Field deletion ────────────────────────────────────────────
@@ -300,6 +301,8 @@ function selectField(fieldId) {
     const last = events[0];
     const restDays = last ? daysSince(last.endDate) : null;
     const status = getStatus(field);
+
+    // Find the active grazing event if any (startDate <= today <= endDate)
     const today = todayStr();
     const activeEvent = events.find(e => e.startDate <= today && e.endDate >= today);
 
@@ -310,6 +313,7 @@ function selectField(fieldId) {
             stockHTML = `<div class="warn-box alert" style="margin:8px 0;font-size:11px">⚠ Last event: ${auHa.toFixed(1)} AU/ha exceeds limit of ${field.maxAUperHa} AU/ha</div>`;
     }
 
+    // Show "End Grazing" only when there is an active event
     const endBtn = activeEvent ?
         `<button class="detail-btn end-graze" onclick="endGrazingToday('${activeEvent.id}','${fieldId}')">⏹ End Grazing</button>` :
         '';
@@ -326,8 +330,8 @@ function selectField(fieldId) {
         <div class="detail-row"><span class="detail-key">Events logged</span><span class="detail-val">${events.length}</span></div>
         ${stockHTML}
         <div class="detail-actions">
-            <button class="detail-btn edit" onclick="openEditFieldModal('${fieldId}')">✎ Edit</button>
-            <button class="detail-btn" onclick="openHistoryModal('${fieldId}')">📋 History</button>
+            <button class="detail-btn edit"   onclick="openEditFieldModal('${fieldId}')">✎ Edit</button>
+            <button class="detail-btn"         onclick="openHistoryModal('${fieldId}')">📋 History</button>
             ${endBtn}
             <button class="detail-btn primary" onclick="openGrazingModal('${fieldId}')">+ Graze</button>
         </div>`;
@@ -341,21 +345,27 @@ function selectField(fieldId) {
     setStatus(`${field.name} — ${field.areaHa.toFixed(2)} ha`);
 }
 
+// End the active grazing event today — sets its endDate to today so
+// the field immediately transitions to "resting" status.
 function endGrazingToday(eventId, fieldId) {
     const events = loadEvents();
     const ev = events.find(e => e.id === eventId);
     if (!ev) return;
+
     const today = todayStr();
     const days = daysBetween(ev.startDate, today);
     const field = loadFields().find(f => f.id === fieldId);
     const name = field ? field.name : 'this field';
+
     if (!confirm(`End grazing on ${name} today?\n\n${ev.animalCount} ${ev.animalType} · ${days} day${days !== 1 ? 's' : ''} (${fmtDate(ev.startDate)} → ${fmtDate(today)})\n\nThe rest period will start from today.`)) return;
+
     ev.endDate = today;
     saveEvents(events);
+
     refreshMapColors();
     renderFieldList();
     updateStats();
-    selectField(fieldId);
+    selectField(fieldId); // re-render the detail panel with updated status
     setStatus(`Grazing ended on "${name}" — rest period started today.`);
 }
 
@@ -368,7 +378,7 @@ function deselectField() {
     if (eb) eb.style.display = 'none';
 }
 
-// ── Field list ────────────────────────────────────────────────
+// ── Field list (sidebar) ──────────────────────────────────────
 function renderFieldList() {
     const fields = loadFields();
     document.getElementById('fieldCount').textContent = fields.length;
@@ -411,10 +421,11 @@ function updateStats() {
 
 // ── Field status logic ────────────────────────────────────────
 function getStatus(field) {
-    const events = loadEvents().filter(e => e.fieldId === field.id).sort((a, b) => b.startDate.localeCompare(a.startDate));
+    const events = loadEvents().filter(e => e.fieldId === field.id)
+        .sort((a, b) => b.startDate.localeCompare(a.startDate));
     if (!events.length) return { label: 'Never grazed', cls: 'none' };
-    const latest = events[0];
-    const today = todayStr();
+    const latest = events[0],
+        today = todayStr();
     if (latest.startDate <= today && latest.endDate >= today) return { label: 'Grazing now', cls: 'grazing' };
     const rest = daysSince(latest.endDate);
     if (rest < 0) return { label: 'Planned', cls: 'resting' };
@@ -424,10 +435,11 @@ function getStatus(field) {
 }
 
 function getReadinessPct(field) {
-    const events = loadEvents().filter(e => e.fieldId === field.id).sort((a, b) => b.startDate.localeCompare(a.startDate));
+    const events = loadEvents().filter(e => e.fieldId === field.id)
+        .sort((a, b) => b.startDate.localeCompare(a.startDate));
     if (!events.length) return 100;
-    const latest = events[0];
-    const today = todayStr();
+    const latest = events[0],
+        today = todayStr();
     if (latest.startDate <= today && latest.endDate >= today) return 0;
     return Math.min(100, Math.round(Math.max(0, daysSince(latest.endDate)) / field.restTarget * 100));
 }
@@ -474,9 +486,9 @@ function switchTab(name) {
         p.classList.toggle('active', p.id === 'panel-' + name)
     );
     if (name === 'map') setTimeout(() => map.invalidateSize(), 50);
-    if (name === 'dashboard' && typeof renderDashboard === 'function') renderDashboard();
-    if (name === 'rotation' && typeof renderRotation === 'function') renderRotation();
-    if (name === 'reports' && typeof renderReports === 'function') renderReports();
+    if (name === 'dashboard') renderDashboard();
+    if (name === 'rotation') renderRotation();
+    if (name === 'reports') renderReports();
 }
 
 // ── Farm config ───────────────────────────────────────────────
@@ -490,13 +502,17 @@ function loadFarmConfig() {
         if (cfg.lat && cfg.lng && map) map.setView([cfg.lat, cfg.lng], 14);
         if (cfg.cycle === 'daynight' || cfg.grazingCycle === 'daynight')
             localStorage.setItem('gt_daynight', '1');
+        // Load animal groups via loadGroups() which handles both the new
+        // gt_groups key and the legacy gt_config.animalGroups fallback.
         window._animalGroups = loadGroups();
     } catch (e) {}
 }
 
 // ── Boot ──────────────────────────────────────────────────────
+// gt-map.js executes before setup.js is parsed, so checkFirstRun()
+// is not yet defined at this line. Wrapping it in an arrow function
+// defers the name lookup until the timer fires — by which time every
+// script including setup.js has fully loaded.
 initMap();
 loadFarmConfig();
-setTimeout(() => {
-    if (typeof checkFirstRun === 'function') checkFirstRun();
-}, 600);
+setTimeout(() => checkFirstRun(), 600);
