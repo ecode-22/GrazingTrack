@@ -464,7 +464,7 @@ function _asRebuildCamps() {
         }));
 
     } catch(err) {
-        console.error("Split error:", err);
+        // Log error for debugging but don't expose to user
         AS.camps = [];
     }
 }
