@@ -4,7 +4,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
-    <meta name="theme-color" content="#1a3529">
+    <meta name="theme-color" content="#10b981">
     <title>GrazingTrack</title>
     <link rel="manifest" href="manifest.json">
     <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css">
@@ -24,15 +24,24 @@
                     <div class="sb-sub" id="farmNameDisplay">Free &amp; Open Source</div>
                 </div>
             </div>
-            <div class="sb-header-btns">
-                <button class="sb-collapse-btn" id="btnCollapse" onclick="collapseToggle()" title="Collapse sidebar">◀</button>
+            <div class="sb-header-actions">
+                <button class="sb-collapse-btn" onclick="toggleSidebar()" title="Collapse sidebar">◀</button>
                 <button class="sb-x" onclick="closeSidebar()">✕</button>
             </div>
         </div>
 
         <div class="sb-tools">
-            <button class="btn-grazing pulse-green" onclick="openGrazingModal(null)">🐄 Log Grazing Event</button>
-            <p class="tool-hint" id="toolHint">💡 Click a field or use the map tools to add paddocks</p>
+            <div class="sb-label">🛠 Drawing Tools</div>
+            <div class="tool-grid">
+                <button class="tcrd active" id="btnSelect" onclick="setTool('select')">↖ Select</button>
+                <button class="tcrd" id="btnDraw" onclick="setTool('draw')">✏️ Draw</button>
+                <button class="tcrd green" id="btnAutoSplit" onclick="openAutoSplit()">⬡ Auto-split</button>
+                <button class="tcrd" id="btnEdit" onclick="setTool('edit')" style="display:none">✎ Reshape</button>
+            </div>
+            <button class="undo-btn" id="btnUndo" onclick="undoLastVertex()" style="display:none">↩ Undo last point</button>
+            <button class="del-btn" id="btnDelete" onclick="deleteSelected()" style="display:none">✕ Delete selected field</button>
+            <button class="btn-grazing" onclick="openGrazingModal(null)">🐄 Log Grazing Event</button>
+            <p class="tool-hint" id="toolHint">💡 Click a field on the map to select it</p>
         </div>
 
         <div class="sb-fields">
@@ -53,93 +62,47 @@
         </div>
 
         <div class="sb-footer">
+            <button class="sb-ftn" onclick="switchTab('dashboard')">📊<span>Dashboard</span></button>
             <button class="sb-ftn" onclick="openModal('modalExport')">⬇️<span>Export</span></button>
-            <button class="sb-ftn" onclick="openOfflinePanel()">📥<span>Offline</span></button>
             <button class="sb-ftn" onclick="openModal('modalAbout')">ℹ️<span>About</span></button>
+            <button class="sb-ftn" onclick="openSetup()">⚙️<span>Setup</span></button>
         </div>
     </aside>
 
     <main class="app-main">
-        <header class="app-header">
-            <button class="app-header-menu" onclick="toggleSidebar()">☰</button>
-            <div class="app-header-title">
-                <span class="app-header-logo">🌾</span>
-                <span id="appHeaderTabName">MAP</span>
-            </div>
-            <div style="width:44px"></div>
-        </header>
-
-        <nav class="tab-bar-bottom" id="tabBar">
-            <button class="tab-btn active" id="tab-map" onclick="switchTab('map')">
-                <span class="tab-btn-icon">🗺️</span>
-                <span class="tab-btn-lbl">Map</span>
-            </button>
-            <button class="tab-btn" id="tab-dashboard" onclick="switchTab('dashboard')">
-                <span class="tab-btn-icon">📊</span>
-                <span class="tab-btn-lbl">Dashboard</span>
-            </button>
-            <button class="tab-btn" id="tab-rotation" onclick="switchTab('rotation')">
-                <span class="tab-btn-icon">🔄</span>
-                <span class="tab-btn-lbl">Rotation</span>
-            </button>
-            <button class="tab-btn" id="tab-reports" onclick="switchTab('reports')">
-                <span class="tab-btn-icon">📄</span>
-                <span class="tab-btn-lbl">Reports</span>
-            </button>
-            <button class="tab-btn" id="tab-setup" onclick="openSetup()">
-                <span class="tab-btn-icon">⚙️</span>
-                <span class="tab-btn-lbl">Setup</span>
-            </button>
+        <nav class="tab-bar">
+            <button class="tab active" id="tab-map" onclick="switchTab('map')">🗺️ Map</button>
+            <button class="tab" id="tab-dashboard" onclick="switchTab('dashboard')">📊 Dashboard</button>
+            <button class="tab" id="tab-rotation" onclick="switchTab('rotation')">🔄 Rotation</button>
+            <button class="tab" id="tab-reports" onclick="switchTab('reports')">📄 Reports</button>
         </nav>
 
         <div class="tab-panel active" id="panel-map">
             <div id="map"></div>
-            <!-- Drawing tools overlay — top left -->
-            <div class="map-tools-overlay" id="mapToolsOverlay">
-                <button class="mt-btn active" id="btnSelect" onclick="setTool('select')" title="Select">
-                    <span class="mt-icon">↖</span><span class="mt-lbl">Select</span>
-                </button>
-                <button class="mt-btn" id="btnDraw" onclick="setTool('draw')" title="Draw field">
-                    <span class="mt-icon">✏️</span><span class="mt-lbl">Draw</span>
-                </button>
-                <button class="mt-btn mt-green" id="btnAutoSplit" onclick="openAutoSplit()" title="Auto-split">
-                    <span class="mt-icon">⬡</span><span class="mt-lbl">Auto-split</span>
-                </button>
-                <button class="mt-btn mt-warn" id="btnUndo" onclick="undoLastVertex()" style="display:none" title="Undo vertex">
-                    <span class="mt-icon">↩</span><span class="mt-lbl">Undo</span>
-                </button>
-            </div>
-            <!-- Offline & layer toggle — top right extra -->
-            <div class="map-tools-right">
-                <button class="mtr-btn" onclick="openOfflinePanel()" title="Offline maps">📥</button>
-            </div>
-            <!-- Delete selected -->
-            <button class="map-delete-btn" id="btnDelete" onclick="deleteSelected()" style="display:none">✕ Delete field</button>
-            <!-- Status bar — bottom pill -->
-            <div class="map-statusbar" id="mapStatusbar">
-                <div class="map-status-text" id="statusMsg">🌿 Select a field or draw a paddock</div>
+            <!-- Sidebar expand button — only visible when sidebar is collapsed -->
+            <button class="sb-expand-btn" id="sbExpandBtn" onclick="toggleSidebar()" title="Show sidebar">☰</button>
+            <div class="map-statusbar">
+                <button class="map-menu-btn" onclick="toggleSidebar()">☰</button>
+                <div class="map-status-text" id="statusMsg">🌿 Select a field or use Draw / Auto-split</div>
                 <div class="map-stats">
-                    <span class="stat-chip">🌾 <strong id="sFields">0</strong></span>
-                    <span class="stat-chip">📐 <strong id="sHa">0 ha</strong></span>
-                    <span class="stat-chip">🐄 <strong id="sGrazing">—</strong></span>
-                    <span class="stat-chip">✅ <strong id="sReady">0</strong></span>
+                    <span class="stat-item">🌾 <span id="sFields">0</span></span>
+                    <span class="stat-divider">|</span>
+                    <span class="stat-item">📐 <span id="sHa">0 ha</span></span>
+                    <span class="stat-divider">|</span>
+                    <span class="stat-item">🐄 <span id="sGrazing">—</span></span>
+                    <span class="stat-divider">|</span>
+                    <span class="stat-item">✅ <span id="sReady">0</span></span>
                 </div>
-            </div>
-            <!-- Offline panel slide-up -->
-            <div class="offline-panel" id="offlinePanel" style="display:none">
-                <div class="offline-panel-hdr">
-                    <span>📥 Offline Map Tiles</span>
-                    <button onclick="closeOfflinePanel()">✕</button>
-                </div>
-                <div class="offline-panel-body" id="offlinePanelBody">Loading…</div>
             </div>
         </div>
 
         <div class="tab-panel" id="panel-dashboard">
             <div class="sv">
                 <div class="kpi-row" id="dashGrid"></div>
-                <div class="card cfw" id="dashRainfall" style="margin-bottom:16px;"></div>
-
+                <div class="cr dash-top-cr">
+                    <div class="card" id="dashFieldChart"></div>
+                    <div class="card cfw" id="dashRainfall"></div>
+                </div>
                 <div class="cr">
                     <div class="card clg" id="dashFieldStatus"></div>
                     <div class="card" id="dashAnimalGroups"></div>
@@ -169,7 +132,7 @@
                 <div class="mh-title">⬡ Auto-split farm into camps</div>
                 <button class="mh-close" onclick="closeAutoSplit()">✕</button>
             </div>
-            <div id="autoSplitContainer">
+            <div id="autoSplitContainer" class="as-container">
                 <div class="as-layout">
                     <div class="as-panel" id="asPanel">
                         <div class="as-steps">
@@ -649,7 +612,6 @@
                 db = document.getElementById('btnDelete');
             if (tool === 'draw') {
                 document.getElementById('btnDraw').classList.add('active');
-                document.getElementById('btnSelect').classList.remove('active');
                 vertexCount = 0;
                 map.addControl(drawControl);
                 setTimeout(() => {
@@ -669,8 +631,7 @@
                 }, 60);
                 if (ub) ub.style.display = 'none';
             } else {
-                const selBtn = document.getElementById('btnSelect');
-                if (selBtn) selBtn.classList.add('active');
+                document.getElementById('btnSelect').classList.add('active');
                 vertexCount = 0;
                 try {
                     map.removeControl(drawControl);
@@ -1029,7 +990,7 @@
             }
             el.innerHTML = fields.map(f => {
                 let s = getStatus(f);
-                return `<div class="field-item" data-id="${f.id}" onclick="selectField('${f.id}')"><span class="field-dot" style="background:${f.color}"></span><div class="field-item-body"><div class="field-item-info"><div class="field-item-name">${f.name}</div><div class="field-item-meta">${f.areaHa.toFixed(1)} ha · ${cap(f.type)}</div></div><span class="pill pill-${s.cls}">${s.label}</span></div></div>`;
+                return `<div class="field-item" data-id="${f.id}" onclick="selectField('${f.id}')"><span class="field-dot" style="background:${f.color}"></span><div class="field-item-info"><div class="field-item-name">${f.name}</div><div class="field-item-meta">${f.areaHa.toFixed(1)} ha · ${cap(f.type)}</div></div><span class="pill pill-${s.cls}">${s.label}</span></div>`;
             }).join('');
             if (selectedFieldId) document.querySelectorAll('.field-item').forEach(el => el.classList.toggle('selected', el.dataset.id === selectedFieldId));
         }
@@ -1715,9 +1676,66 @@
             document.getElementById('dashStocking').innerHTML=`<div class="card-title">📊 Stocking rates</div>${si.length?si.join(''):'<p style="color:var(--faint)">No events yet.</p>'}`;
 
             renderAnimalGroupsCard();
-            
-            // NEW WEATHER WIDGET INJECTION 
+            renderFieldDonutChart();
             fetchRainfall();
+        }
+
+        // ── SVG Donut chart: field areas ────────────────────────────────
+        function renderFieldDonutChart(){
+            const el=document.getElementById('dashFieldChart');
+            if(!el) return;
+            const fields=loadFields();
+            const totalHa=fields.reduce((s,f)=>s+f.areaHa,0);
+            if(!fields.length||totalHa===0){
+                el.innerHTML=`<div class="card-title">🌾 Farm Area Breakdown</div><div style="text-align:center;padding:30px;color:var(--faint);font-size:12px">No fields yet</div>`;
+                return;
+            }
+            const R=80,cx=110,cy=110,stroke=28;
+            const circ=2*Math.PI*R;
+            // Sort largest first
+            const sorted=[...fields].sort((a,b)=>b.areaHa-a.areaHa);
+            let arcs='',offset=0;
+            const segments=sorted.map(f=>{
+                const pct=f.areaHa/totalHa;
+                const dash=circ*pct;
+                const gap=circ-dash;
+                const arc=`<circle cx="${cx}" cy="${cy}" r="${R}"
+                    fill="none" stroke="${f.color}" stroke-width="${stroke}"
+                    stroke-dasharray="${dash.toFixed(2)} ${gap.toFixed(2)}"
+                    stroke-dashoffset="${(-offset*circ/1).toFixed(2)}"
+                    transform="rotate(-90 ${cx} ${cy})"
+                    style="transition:stroke-dasharray .5s ease">
+                    <title>${f.name}: ${f.areaHa.toFixed(1)} ha (${(pct*100).toFixed(1)}%)</title>
+                </circle>`;
+                offset+=pct;
+                return {arc,f,pct};
+            });
+            arcs=segments.map(s=>s.arc).join('');
+            const legend=sorted.slice(0,8).map(f=>{
+                const pct=(f.areaHa/totalHa*100).toFixed(1);
+                return `<div class="donut-legend-row">
+                    <span class="donut-legend-dot" style="background:${f.color}"></span>
+                    <span class="donut-legend-name">${f.name}</span>
+                    <span class="donut-legend-val">${f.areaHa.toFixed(1)} ha</span>
+                    <span class="donut-legend-pct">${pct}%</span>
+                </div>`;
+            }).join('');
+            const extra=sorted.length>8?`<div style="font-size:11px;color:var(--faint);margin-top:6px">+${sorted.length-8} more fields</div>`:'';
+            el.innerHTML=`<div class="card-title">🌾 Farm Area Breakdown</div>
+                <div class="donut-wrap">
+                    <div class="donut-svg-wrap">
+                        <svg width="220" height="220" viewBox="0 0 220 220">
+                            <!-- background track -->
+                            <circle cx="${cx}" cy="${cy}" r="${R}" fill="none" stroke="var(--border)" stroke-width="${stroke}"/>
+                            ${arcs}
+                            <!-- centre text -->
+                            <text x="${cx}" y="${cy-10}" text-anchor="middle" font-size="22" font-weight="800" fill="var(--text)">${totalHa.toFixed(1)}</text>
+                            <text x="${cx}" y="${cy+14}" text-anchor="middle" font-size="12" fill="var(--faint)">total ha</text>
+                            <text x="${cx}" y="${cy+30}" text-anchor="middle" font-size="11" fill="var(--faint)">${sorted.length} field${sorted.length!==1?'s':''}</text>
+                        </svg>
+                    </div>
+                    <div class="donut-legend">${legend}${extra}</div>
+                </div>`;
         }
 
         async function fetchRainfall() {
@@ -1851,15 +1869,8 @@
 
         // ── TABS & UTILS ─────────────────────────────────────────────
         function switchTab(name){
-            document.querySelectorAll('.tab-btn').forEach(b=>b.classList.toggle('active',b.id==='tab-'+name));
+            document.querySelectorAll('.tab').forEach(b=>b.classList.toggle('active',b.id==='tab-'+name));
             document.querySelectorAll('.tab-panel').forEach(p=>p.classList.toggle('active',p.id==='panel-'+name));
-            // Update header title
-            const titleMap={map:'MAP',dashboard:'DASHBOARD',rotation:'ROTATION',reports:'REPORTS'};
-            const hdr=document.getElementById('appHeaderTabName');
-            if(hdr) hdr.textContent=titleMap[name]||name.toUpperCase();
-            // Show/hide map tools overlay
-            const mto=document.getElementById('mapToolsOverlay');
-            if(mto) mto.style.display=name==='map'?'flex':'none';
             if(name==='map') setTimeout(()=>map.invalidateSize(),50);
             if(name==='dashboard') renderDashboard();
             if(name==='rotation') renderRotation();
@@ -1868,74 +1879,24 @@
 
         function openModal(id){ document.getElementById(id).style.display='flex'; }
         function closeModal(id){ document.getElementById(id).style.display='none'; }
-        function toggleSidebar(){ document.getElementById('sidebar').classList.toggle('open'); }
-        function closeSidebar(){ document.getElementById('sidebar').classList.remove('open'); }
-        function collapseToggle(){
-            const sb=document.getElementById('sidebar'),btn=document.getElementById('btnCollapse');
-            const col=sb.classList.toggle('collapsed');
-            if(btn){btn.textContent=col?'▶':'◀';btn.title=col?'Expand':'Collapse';}
-            setTimeout(()=>{if(typeof map!=='undefined')map.invalidateSize();},320);
-            try{localStorage.setItem('gt_sb_collapsed',col?'1':'0');}catch(e){}
+        function toggleSidebar(){
+            const sb=document.getElementById('sidebar');
+            const btn=document.getElementById('sbExpandBtn');
+            // Desktop: toggle a 'sb-hidden' class that collapses via CSS width:0
+            if(window.innerWidth>900){
+                const hidden=sb.classList.toggle('sb-hidden');
+                if(btn) btn.style.display=hidden?'flex':'none';
+                // After transition, invalidate map size
+                setTimeout(()=>{ if(typeof map!=='undefined') try{map.invalidateSize();}catch(e){} },320);
+                try{localStorage.setItem('gt_sb_hidden',hidden?'1':'0');}catch(e){}
+            } else {
+                // Mobile: slide-in overlay
+                sb.classList.toggle('open');
+            }
         }
-        // Offline panel helpers
-        function openOfflinePanel(){
-            const panel=document.getElementById('offlinePanel');
-            if(!panel)return;
-            panel.style.display='block';
-            panel.classList.add('show');
-            renderOfflinePanel();
-        }
-        function closeOfflinePanel(){
-            const panel=document.getElementById('offlinePanel');
-            if(!panel)return;
-            panel.classList.remove('show');
-            setTimeout(()=>{panel.style.display='none';},300);
-        }
-        function renderOfflinePanel(){
-            const body=document.getElementById('offlinePanelBody');
-            if(!body)return;
-            const fields=loadFields();
-            if(!fields.length){body.innerHTML='<p style="color:rgba(255,255,255,.6);font-size:12px">Add fields first to download tiles for your area.</p>';return;}
-            const getFarmBbox=()=>{let minLat=90,maxLat=-90,minLng=180,maxLng=-180;fields.forEach(f=>{if(f.geometry&&f.geometry.coordinates)f.geometry.coordinates[0].forEach(([lng,lat])=>{minLat=Math.min(minLat,lat);maxLat=Math.max(maxLat,lat);minLng=Math.min(minLng,lng);maxLng=Math.max(maxLng,lng);});});return{minLat:minLat-.01,maxLat:maxLat+.01,minLng:minLng-.01,maxLng:maxLng+.01};};
-            const bbox=getFarmBbox();
-            body.innerHTML=`<div class="ol-info">Farm area detected — tiles will cover your paddocks at zoom 14–17.</div>
-                <div class="ol-zoom-ctrl"><label>Max zoom: <strong id="olZoomVal">16</strong></label>
-                <input type="range" min="14" max="17" value="16" style="width:100%;accent-color:#4ade80;margin:6px 0"
-                    oninput="document.getElementById('olZoomVal').textContent=this.value" id="olZoomSlider"></div>
-                <div id="olProgArea"></div>
-                <div class="ol-btns">
-                    <button class="ol-dl-btn" onclick="doOfflineDownload()">📥 Download tiles</button>
-                    <button class="ol-clear-btn" onclick="doClearTiles()">🗑 Clear cache</button>
-                </div>
-                <p class="ol-tip">After downloading, switch to "Street map" layer — it works offline. Satellite tiles are also cached as you browse.</p>`;
-        }
-        async function doOfflineDownload(){
-            const fields=loadFields();if(!fields.length)return;
-            const maxZ=parseInt(document.getElementById('olZoomSlider').value)||16;
-            const bbox=(()=>{let a=90,b=-90,c=180,d=-180;fields.forEach(f=>{if(f.geometry&&f.geometry.coordinates)f.geometry.coordinates[0].forEach(([lng,lat])=>{a=Math.min(a,lat);b=Math.max(b,lat);c=Math.min(c,lng);d=Math.max(d,lng);});});return{minLat:a-.01,maxLat:b+.01,minLng:c-.01,maxLng:d+.01};})();
-            const lon2x=(l,z)=>Math.floor((l+180)/360*(1<<z));
-            const lat2y=(l,z)=>{const r=l*Math.PI/180;return Math.floor((1-Math.log(Math.tan(r)+1/Math.cos(r))/Math.PI)/2*(1<<z));};
-            const urls=[];
-            for(let z=13;z<=maxZ;z++){const x0=lon2x(bbox.minLng,z),x1=lon2x(bbox.maxLng,z),y0=lat2y(bbox.maxLat,z),y1=lat2y(bbox.minLat,z);for(let x=x0;x<=x1;x++)for(let y=y0;y<=y1;y++)urls.push(`https://tile.openstreetmap.org/${z}/${x}/${y}.png`);}
-            const progArea=document.getElementById('olProgArea');
-            progArea.innerHTML=`<div class="ol-prog-track"><div class="ol-prog-bar" id="olPBar" style="width:0%"></div></div><div id="olProgTxt" style="font-size:11px;color:rgba(255,255,255,.6);margin-top:4px">0 / ${urls.length}</div>`;
-            const cache=await caches.open('gt-tiles-v1');
-            let done=0,failed=0;
-            for(const url of urls){try{if(!await cache.match(url)){const r=await fetch(url);if(r.ok)await cache.put(url,r);else failed++;}else done++;}catch{failed++;}done++;
-                const pct=Math.round(done/urls.length*100);
-                const bar=document.getElementById('olPBar');if(bar)bar.style.width=pct+'%';
-                const txt=document.getElementById('olProgTxt');if(txt)txt.textContent=`${done} / ${urls.length} tiles (${failed} failed)`;
-                if(done%100===0)await new Promise(r=>setTimeout(r,10));}
-            const txt=document.getElementById('olProgTxt');
-            if(txt)txt.textContent=`✅ Done — ${urls.length-failed} tiles saved. Switch to "Street map" when offline.`;
-        }
-        async function doClearTiles(){
-            if(!confirm('Clear cached map tiles?'))return;
-            const cache=await caches.open('gt-tiles-v1');
-            const keys=await cache.keys();
-            await Promise.all(keys.map(k=>cache.delete(k)));
-            const txt=document.getElementById('olProgTxt');
-            if(txt)txt.textContent=`🗑 ${keys.length} tiles cleared.`;
+        function closeSidebar(){
+            const sb=document.getElementById('sidebar');
+            sb.classList.remove('open');
         }
 
         document.querySelectorAll('.overlay').forEach(el=>{ el.addEventListener('click',e=>{ if(e.target!==el) return; el.style.display='none'; if(el.id==='modalName') cancelDraw(); if(el.id==='modalAutoSplit') closeAutoSplit(); }); });
@@ -1949,13 +1910,14 @@
         // ── BOOT ─────────────────────────────────────────────────────
         initMap();
         try{ let cfg=JSON.parse(localStorage.getItem('gt_config')||'{}'); if(cfg.farmName) document.getElementById('farmNameDisplay').textContent=cfg.farmName; }catch(e){}
-        // Restore sidebar collapsed state
-        try{if(localStorage.getItem('gt_sb_collapsed')==='1'){document.getElementById('sidebar').classList.add('collapsed');const b=document.getElementById('btnCollapse');if(b){b.textContent='▶';b.title='Expand sidebar';}}}catch(e){}
-        // Initial header title
-        document.getElementById('appHeaderTabName').textContent='MAP';
-        // Ensure setup function exists (may not be loaded in this build)
-        if(typeof openSetup==='undefined') window.openSetup=()=>alert('Setup: edit farm name and animal groups in settings.');
-        if(typeof checkFirstRun==='undefined') window.checkFirstRun=()=>{};
+        // Restore sidebar hidden state
+        try{
+            if(localStorage.getItem('gt_sb_hidden')==='1' && window.innerWidth>900){
+                document.getElementById('sidebar').classList.add('sb-hidden');
+                const btn=document.getElementById('sbExpandBtn');
+                if(btn) btn.style.display='flex';
+            }
+        }catch(e){}
     </script>
 </body>
 
