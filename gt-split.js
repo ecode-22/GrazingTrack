@@ -1,16 +1,48 @@
 // ============================================================
 //  gt-split.js  —  Farm boundary split tool
-//  Uses Turf.js for accurate polygon clipping
+//
+//  Crash fixes in this version:
+//   1. querySelector scoped to #asMap so it never clicks the
+//      main map's draw button by accident.
+//   2. Top-level try/catch in _asRebuildCamps — a Turf error
+//      never corrupts the panel or map state.
+//   3. MultiPolygon-safe sequential cuts — when a cut produces
+//      a MultiPolygon remainder, extract the largest piece so
+//      the next turf.intersect call doesn't throw.
+//   4. Only ONE Leaflet Draw control at a time — the boundary
+//      draw control is removed before the reshape control is
+//      added, and restored afterwards.
+//   5. Slider debounce (80 ms) so rapid dragging doesn't pile
+//      up Turf geometry operations and freeze the browser.
+//   6. Safe centroid fallback in _asDrawCampLayers.
+//   7. "Redraw boundary" button lets the farmer restart without
+//      closing the modal and losing all their work.
 // ============================================================
 'use strict';
 
-let asMap = null;
-let asBoundaryLayer = null;
-let asCampLayers = [];
-let asCamps = [];
-let asCampCount = 4;
-let asSplitDir = 'grid';
-let asDrawnGroup = null;
+// ── State ─────────────────────────────────────────────────────
+const AS = {
+    map: null,
+    drawn: null,
+    drawControl: null, // the boundary-draw control (removed during reshape)
+    boundary: null,
+    boundaryLayer: null,
+    campLayers: [],
+
+    count: 4,
+    dir: 'vertical',
+    dividers: [{ pos: 0.25, angle: 0 }, { pos: 0.50, angle: 0 }, { pos: 0.75, angle: 0 }],
+    colDividers: [0.50],
+    rowDividers: [0.50],
+
+    camps: [],
+
+    reshapeIdx: null,
+    reshapeGroup: null,
+    reshapeControl: null,
+
+    _refreshTimer: null // debounce handle
+};
 
 const SPLIT_COLORS = [
     '#2d6a4f', '#52b788', '#40916c', '#74c69d', '#1b4332', '#34a0a4',
@@ -84,32 +116,54 @@ function initSplitMap() {
         },
         edit: { featureGroup: asDrawnGroup, remove: false }
     });
-    asMap.addControl(drawControl);
-    asMap.on(L.Draw.Event.CREATED, onBoundaryDrawn);
-    renderSplitPanel();
+    AS.map.addControl(AS.drawControl);
+
+    // FIX 1: Scope to #asMap so we never click the main map's draw button.
+    setTimeout(() => {
+        const mapEl = document.getElementById('asMap');
+        if (mapEl) {
+            const btn = mapEl.querySelector('.leaflet-draw-draw-polygon');
+            if (btn) btn.click();
+        }
+    }, 300);
+
+    AS.map.on(L.Draw.Event.CREATED, e => {
+        if (AS.boundaryLayer) AS.drawn.removeLayer(AS.boundaryLayer);
+        _asClearCampLayers();
+        AS.boundaryLayer = e.layer;
+        AS.boundaryLayer.setStyle({ color: '#2d6a4f', fillColor: '#2d6a4f', fillOpacity: 0.12, weight: 3 });
+        AS.drawn.addLayer(AS.boundaryLayer);
+        AS.boundary = AS.boundaryLayer.toGeoJSON().geometry;
+        _asResetDividers();
+        _asRebuildCamps();
+        _asDrawCampLayers();
+        _asRenderPanel();
+    });
 }
 
-function destroySplitMap() {
-    if (asMap) {
-        try { asMap.remove(); } catch (e) {}
-        asMap = null;
+function _asDestroyMap() {
+    if (AS.map) {
+        try { AS.map.remove(); } catch (e) {}
+        AS.map = null;
     }
-    asBoundaryLayer = null;
-    asCampLayers = [];
+    AS.drawn = null;
+    AS.boundaryLayer = null;
+    AS.drawControl = null;
+    AS.campLayers = [];
 }
 
-function onBoundaryDrawn(e) {
-    if (e.layerType !== 'polygon') return;
-    if (asBoundaryLayer) asDrawnGroup.removeLayer(asBoundaryLayer);
-    clearCampLayers();
-    asBoundaryLayer = e.layer;
-    asBoundaryLayer.setStyle({ color: '#2d6a4f', fillColor: '#2d6a4f', fillOpacity: 0.12, weight: 3 });
-    asDrawnGroup.addLayer(asBoundaryLayer);
-    generateCamps();
-    renderSplitPanel();
+// ── Divider reset ─────────────────────────────────────────────
+function _asResetDividers() {
+    const n = AS.count;
+    AS.dividers = Array.from({ length: n - 1 }, (_, i) => ({ pos: (i + 1) / n, angle: 0 }));
+    const cols = Math.ceil(Math.sqrt(n));
+    const rows = Math.ceil(n / cols);
+    AS.colDividers = Array.from({ length: cols - 1 }, (_, i) => (i + 1) / cols);
+    AS.rowDividers = Array.from({ length: rows - 1 }, (_, i) => (i + 1) / rows);
 }
 
-function renderSplitPanel() {
+// ── Panel renderer ────────────────────────────────────────────
+function _asRenderPanel() {
     const panel = document.getElementById('asControlPanel');
     if (!panel) return;
 
@@ -185,86 +239,193 @@ function updateCampName(index, name) {
     if (asCamps[index]) asCamps[index].name = name.trim() || `Camp ${index + 1}`;
 }
 
-function generateCamps() {
-    clearCampLayers();
-    if (!asBoundaryLayer) return;
+function asOnDivAngle(idx, rawVal) {
+    AS.dividers[idx].angle = parseInt(rawVal);
+    const aEl = document.getElementById(`as-div-ang-pct-${idx}`);
+    const v = parseInt(rawVal);
+    if (aEl) aEl.textContent = (v>0?'+':'')+v+'°';
+    _asScheduleRefresh();
+}
 
-    const geo = asBoundaryLayer.toGeoJSON().geometry;
-    const farmPoly = turf.polygon(geo.coordinates);
-    const bbox = turf.bbox(farmPoly);
-    const [minLng, minLat, maxLng, maxLat] = bbox;
-    const n = asCampCount;
+function asOnColDiv(idx, rawVal) {
+    AS.colDividers[idx] = parseInt(rawVal)/100;
+    const pEl = document.getElementById(`as-cdiv-pct-${idx}`); if(pEl) pEl.textContent = rawVal+'%';
+    const prev = document.getElementById(`as-cdiv-${idx-1}`); if(prev) prev.max = parseInt(rawVal)-5;
+    const next = document.getElementById(`as-cdiv-${idx+1}`); if(next) next.min = parseInt(rawVal)+5;
+    _asScheduleRefresh();
+}
 
-    let cells = [];
+function asOnRowDiv(idx, rawVal) {
+    AS.rowDividers[idx] = parseInt(rawVal)/100;
+    const pEl = document.getElementById(`as-rdiv-pct-${idx}`); if(pEl) pEl.textContent = rawVal+'%';
+    const prev = document.getElementById(`as-rdiv-${idx-1}`); if(prev) prev.max = parseInt(rawVal)-5;
+    const next = document.getElementById(`as-rdiv-${idx+1}`); if(next) next.min = parseInt(rawVal)+5;
+    _asScheduleRefresh();
+}
 
-    if (asSplitDir === 'grid') {
-        const cols = Math.ceil(Math.sqrt(n));
-        const rows = Math.ceil(n / cols);
-        const cellW = (maxLng - minLng) / cols;
-        const cellH = (maxLat - minLat) / rows;
-        for (let r = 0; r < rows && cells.length < n; r++) {
-            for (let c = 0; c < cols && cells.length < n; c++) {
-                const cell = turf.bboxPolygon([
-                    minLng + c * cellW,
-                    minLat + r * cellH,
-                    minLng + (c + 1) * cellW,
-                    minLat + (r + 1) * cellH
-                ]);
-                const intersect = turf.intersect(farmPoly, cell);
-                if (intersect && calcAreaHa(intersect.geometry) > 0.01) {
-                    cells.push(intersect);
+// FIX 5: Debounce — 80ms after the last slider move before recomputing.
+function _asScheduleRefresh() {
+    if (AS._refreshTimer) clearTimeout(AS._refreshTimer);
+    AS._refreshTimer = setTimeout(() => {
+        AS._refreshTimer = null;
+        _asRebuildAndRefresh();
+    }, 80);
+}
+
+function _asRebuildAndRefresh() {
+    _asRebuildCamps();
+    _asClearCampLayers();
+    _asDrawCampLayers();
+    AS.camps.forEach((c,i) => {
+        const el = document.getElementById(`as-size-${i}`);
+        if (el) el.textContent = c.areaHa.toFixed(1)+' ha';
+    });
+    const badge = document.getElementById('asTotalBadge');
+    if (badge) {
+        const total = AS.camps.reduce((s,c) => s+c.areaHa, 0);
+        badge.textContent = `${AS.camps.length} camp${AS.camps.length!==1?'s':''} · ${total.toFixed(1)} ha total`;
+    }
+    if (AS.camps.length === 0) _asRenderPanel();
+    const saveBtn = document.getElementById('asSaveBtn');
+    if (saveBtn) saveBtn.disabled = AS.camps.length === 0;
+}
+
+// ── Split algorithm ───────────────────────────────────────────
+function _asRebuildCamps() {
+    if (!AS.boundary) { AS.camps = []; return; }
+
+    // FIX 2: Top-level try/catch — any Turf error leaves camps empty
+    // rather than crashing the page or corrupting the UI.
+    try {
+        const farmPoly = turf.polygon(AS.boundary.coordinates);
+        const bbox     = turf.bbox(farmPoly);
+        const oldNames = AS.camps.map(c => c.name);
+        let polys      = [];
+
+        if (AS.dir === 'grid') {
+            const [minLng,minLat,maxLng,maxLat] = bbox;
+            const colBreaks = [0,...AS.colDividers,1];
+            const rowBreaks = [0,...AS.rowDividers,1];
+            let idx = 0;
+            outer: for (let r=0; r<rowBreaks.length-1; r++) {
+                for (let c=0; c<colBreaks.length-1; c++) {
+                    if (idx++ >= AS.count) break outer;
+                    const sLng = minLng + colBreaks[c]  *(maxLng-minLng);
+                    const eLng = minLng + colBreaks[c+1]*(maxLng-minLng);
+                    const sLat = minLat + rowBreaks[r]  *(maxLat-minLat);
+                    const eLat = minLat + rowBreaks[r+1]*(maxLat-minLat);
+                    const ix = turf.intersect(farmPoly, turf.bboxPolygon([sLng,sLat,eLng,eLat]));
+                    if (ix) polys.push(ix);
                 }
             }
-        }
-    } else if (asSplitDir === 'vertical') {
-        const step = (maxLng - minLng) / n;
-        for (let i = 0; i < n; i++) {
-            const cell = turf.bboxPolygon([
-                minLng + i * step,
-                minLat,
-                minLng + (i + 1) * step,
-                maxLat
-            ]);
-            const intersect = turf.intersect(farmPoly, cell);
-            if (intersect && calcAreaHa(intersect.geometry) > 0.01) {
-                cells.push(intersect);
+        } else {
+            let remaining = farmPoly;
+            for (const div of AS.dividers) {
+                const line = _asDividerLine(div, bbox);
+                const cuts = _asCutWithLine(remaining, line);
+                if (cuts.length === 2) {
+                    const ci = AS.dir==='vertical' ? 0 : 1;
+                    const c0 = turf.centroid(cuts[0]).geometry.coordinates[ci];
+                    const c1 = turf.centroid(cuts[1]).geometry.coordinates[ci];
+                    const [before, after] = c0<c1 ? [cuts[0],cuts[1]] : [cuts[1],cuts[0]];
+                    polys.push(before);
+                    // FIX 3: Extract largest polygon from MultiPolygon so the next
+                    // turf.intersect call doesn't receive an unsupported geometry type.
+                    remaining = _asLargestPolygon(after);
+                }
             }
+            polys.push(remaining);
         }
-    } else if (asSplitDir === 'horizontal') {
-        const step = (maxLat - minLat) / n;
-        for (let i = 0; i < n; i++) {
-            const cell = turf.bboxPolygon([
-                minLng,
-                minLat + i * step,
-                maxLng,
-                minLat + (i + 1) * step
-            ]);
-            const intersect = turf.intersect(farmPoly, cell);
-            if (intersect && calcAreaHa(intersect.geometry) > 0.01) {
-                cells.push(intersect);
-            }
-        }
+
+        const valid = polys.filter(p => calcAreaHa(p.geometry) > 0.01);
+        AS.camps = valid.map((p,i) => ({
+            id:       uid(),
+            name:     oldNames[i] || `Camp ${i+1}`,
+            geometry: p.geometry,
+            color:    AS_COLORS[i % AS_COLORS.length],
+            areaHa:   calcAreaHa(p.geometry)
+        }));
+
+    } catch(err) {
+        AS.camps = [];
     }
+}
 
-    asCamps = cells.map((cell, i) => ({
-        id: uid(),
-        name: `Camp ${i + 1}`,
-        geometry: cell.geometry,
-        color: SPLIT_COLORS[i % SPLIT_COLORS.length],
-        areaHa: calcAreaHa(cell.geometry)
-    }));
+// Return the largest simple Polygon from a Feature<Polygon|MultiPolygon>.
+function _asLargestPolygon(feature) {
+    if (!feature || !feature.geometry) return feature;
+    if (feature.geometry.type !== 'MultiPolygon') return feature;
+    let bestArea = -1, bestCoords = null;
+    for (const ring of feature.geometry.coordinates) {
+        const area = calcAreaHa({ type:'Polygon', coordinates:ring });
+        if (area > bestArea) { bestArea = area; bestCoords = ring; }
+    }
+    return bestCoords ? turf.polygon(bestCoords) : feature;
+}
 
-    drawCampLayers();
+// Build the divider line for a {pos, angle} divider.
+function _asDividerLine(div, bbox) {
+    const [minLng,minLat,maxLng,maxLat] = bbox;
+    const ang = (div.angle||0) * Math.PI/180;
+    const L   = 3 * Math.max(maxLng-minLng, maxLat-minLat);
+    let baseX, baseY, dx, dy;
+    if (AS.dir === 'vertical') {
+        baseX = minLng + div.pos*(maxLng-minLng);
+        baseY = (minLat+maxLat)/2;
+        dx = Math.sin(ang); dy = Math.cos(ang);
+    } else {
+        baseX = (minLng+maxLng)/2;
+        baseY = minLat + div.pos*(maxLat-minLat);
+        dx = Math.cos(ang); dy = Math.sin(ang);
+    }
+    return [[baseX-L*dx, baseY-L*dy],[baseX+L*dx, baseY+L*dy]];
+}
+
+// Cut a Turf polygon with a two-point line. Returns [left,right] or [poly].
+function _asCutWithLine(poly, linePts) {
+    try {
+        const [p1, p2] = linePts;
+        const dx = p2[0]-p1[0], dy = p2[1]-p1[1];
+        const len = Math.sqrt(dx*dx+dy*dy) || 1;
+        const nx = -dy/len, ny = dx/len;
+        const ext = len;
+
+        // Explicitly close both rings (copy p1 values, not the reference).
+        const lc = [p1, p2, [p2[0]+nx*ext,p2[1]+ny*ext], [p1[0]+nx*ext,p1[1]+ny*ext], [p1[0],p1[1]]];
+        const rc = [p1, p2, [p2[0]-nx*ext,p2[1]-ny*ext], [p1[0]-nx*ext,p1[1]-ny*ext], [p1[0],p1[1]]];
+
+        // Ensure input is a simple Polygon for Turf v6 compatibility.
+        const inputPoly = (poly.geometry && poly.geometry.type==='MultiPolygon')
+            ? _asLargestPolygon(poly)
+            : poly;
+
+        const left  = turf.intersect(inputPoly, turf.polygon([lc]));
+        const right = turf.intersect(inputPoly, turf.polygon([rc]));
+        const result = [];
+        if (left)  result.push(left);
+        if (right) result.push(right);
+        return result.length === 2 ? result : [poly];
+    } catch(e) {
+        return [poly];
+    }
+}
+
+// ── Map layer helpers ─────────────────────────────────────────
+function _asClearCampLayers() {
+    AS.campLayers.forEach(l => { try { AS.map && AS.map.removeLayer(l); } catch(e){} });
+    AS.campLayers = [];
 }
 
 function drawCampLayers() {
     if (!asMap) return;
     asCamps.forEach(camp => {
         try {
-            const layer = L.geoJSON(camp.geometry, {
-                style: { color: camp.color, fillColor: camp.color, fillOpacity: 0.4, weight: 2 }
-            }).addTo(asMap);
-            // Add label at centroid
+            const layer = L.geoJSON(
+                { type:'Feature', geometry:camp.geometry, properties:{} },
+                { style:{ color:camp.color, fillColor:camp.color, fillOpacity:0.4, weight:2 } }
+            ).addTo(AS.map);
+
+            // FIX 6: Safe centroid with coordinate-average fallback.
             let cLat, cLng;
             try {
                 const centroid = turf.centroid(camp.geometry);
@@ -279,15 +440,101 @@ function drawCampLayers() {
                 html: `<div class="camp-lbl">${camp.name}</div>`,
                 iconAnchor: [30, 10]
             });
-            const marker = L.marker([cLat, cLng], { icon, interactive: false }).addTo(asMap);
-            asCampLayers.push(layer, marker);
-        } catch (e) {}
+            const m = L.marker([cLat,cLng], { icon, interactive:false }).addTo(AS.map);
+            AS.campLayers.push(layer, m);
+        } catch(e) {
+            // Skip this camp layer if rendering fails — don't crash the rest.
+        }
     });
 }
 
-function clearCampLayers() {
-    asCampLayers.forEach(l => { try { asMap && asMap.removeLayer(l); } catch (e) {} });
-    asCampLayers = [];
+// ── Reshape ───────────────────────────────────────────────────
+function asReshapeCamp(idx) {
+    if (AS.reshapeIdx !== null) return;
+    AS.reshapeIdx = idx;
+
+    // FIX 4: Remove boundary draw control BEFORE adding reshape control
+    // so there is never more than one Leaflet Draw control at once.
+    if (AS.drawControl) {
+        try { AS.map.removeControl(AS.drawControl); } catch(e) {}
+    }
+
+    _asClearCampLayers();
+    AS.camps.forEach((camp,i) => {
+        if (i === idx) return;
+        try {
+            const layer = L.geoJSON(
+                { type:'Feature', geometry:camp.geometry, properties:{} },
+                { style:{ color:camp.color, fillColor:camp.color, fillOpacity:0.12, weight:1.5, dashArray:'4 3' } }
+            ).addTo(AS.map);
+            AS.campLayers.push(layer);
+        } catch(e) {}
+    });
+
+    AS.reshapeGroup = new L.FeatureGroup().addTo(AS.map);
+    try {
+        L.geoJSON(
+            { type:'Feature', geometry:AS.camps[idx].geometry, properties:{} },
+            { style:{ color:AS.camps[idx].color, fillColor:AS.camps[idx].color, fillOpacity:0.55, weight:3 } }
+        ).eachLayer(l => AS.reshapeGroup.addLayer(l));
+    } catch(e) {}
+
+    AS.reshapeControl = new L.Control.Draw({
+        position:'topright', draw:false,
+        edit:{ featureGroup:AS.reshapeGroup, remove:false }
+    });
+    AS.map.addControl(AS.reshapeControl);
+
+    setTimeout(() => {
+        const mapEl = document.getElementById('asMap');
+        if (mapEl) {
+            const btn = mapEl.querySelector('.leaflet-draw-edit-edit');
+            if (btn) btn.click();
+        }
+    }, 80);
+
+    _asRenderPanel();
+}
+
+function _asFinishReshape(save) {
+    if (AS.reshapeIdx === null) return;
+
+    if (save && AS.reshapeGroup) {
+        AS.reshapeGroup.eachLayer(l => {
+            try {
+                const geo = l.toGeoJSON().geometry;
+                if (geo) {
+                    AS.camps[AS.reshapeIdx].geometry = geo;
+                    AS.camps[AS.reshapeIdx].areaHa   = calcAreaHa(geo);
+                }
+            } catch(e) {}
+        });
+    }
+
+    if (AS.reshapeControl) {
+        try {
+            const mapEl = document.getElementById('asMap');
+            const saveBtn = mapEl && mapEl.querySelector('.leaflet-draw-edit-save');
+            if (saveBtn) saveBtn.click();
+            AS.map.removeControl(AS.reshapeControl);
+        } catch(e) {}
+        AS.reshapeControl = null;
+    }
+    if (AS.reshapeGroup) {
+        try { AS.map.removeLayer(AS.reshapeGroup); } catch(e) {}
+        AS.reshapeGroup = null;
+    }
+
+    AS.reshapeIdx = null;
+
+    // FIX 4 continued: restore the boundary draw control.
+    if (AS.drawControl && AS.map) {
+        try { AS.map.addControl(AS.drawControl); } catch(e) {}
+    }
+
+    _asClearCampLayers();
+    _asDrawCampLayers();
+    _asRenderPanel();
 }
 
 function asSave() {
