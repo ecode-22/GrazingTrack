@@ -18,14 +18,12 @@ function save(k, v) {
 }
 const loadFields = () => load('gt_fields');
 const loadEvents = () => load('gt_events');
-const loadMoisture = () => load('gt_moisture');
 const saveFields = f => save('gt_fields', f);
 const saveEvents = e => save('gt_events', e);
-const saveMoisture = m => save('gt_moisture', m);
 
 function getStorageUsage() {
     let t = 0;
-    ['gt_fields', 'gt_events', 'gt_moisture'].forEach(k => { const v = localStorage.getItem(k); if (v) t += v.length * 2; });
+    ['gt_fields', 'gt_events', 'gt_groups'].forEach(k => { const v = localStorage.getItem(k); if (v) t += v.length * 2; });
     return { used: t, max: 5 * 1024 * 1024, pct: Math.min(100, t / (5 * 1024 * 1024) * 100) };
 }
 
@@ -300,11 +298,10 @@ function bindFieldLayer(layer, field) {
 function deleteSelected() {
     if (!selectedFieldId) return;
     const field = loadFields().find(f => f.id === selectedFieldId);
-    if (!field || !confirm(`Delete "${field.name}"?\nAll grazing events and moisture readings will also be deleted.`)) return;
+    if (!field || !confirm(`Delete "${field.name}"?\nAll its grazing events will also be deleted.`)) return;
     drawnItems.eachLayer(l => { if (l.options.fieldId === selectedFieldId) drawnItems.removeLayer(l); });
     saveFields(loadFields().filter(f => f.id !== selectedFieldId));
     saveEvents(loadEvents().filter(e => e.fieldId !== selectedFieldId));
-    saveMoisture(loadMoisture().filter(m => m.fieldId !== selectedFieldId));
     deselectField();
     renderFieldList();
     updateStats();
@@ -341,7 +338,6 @@ function selectField(fieldId) {
     <div class="detail-actions">
       <button class="detail-btn edit" onclick="openEditFieldModal('${fieldId}')">✎ Edit</button>
       <button class="detail-btn" onclick="openHistoryModal('${fieldId}')">History</button>
-      <button class="detail-btn" onclick="openMoistureModal('${fieldId}')">💧</button>
       <button class="detail-btn primary" onclick="openGrazingModal('${fieldId}')">+ Graze</button>
     </div>`;
     document.getElementById('btnDelete').style.display = 'flex';
@@ -928,49 +924,9 @@ function deleteEvent(eventId,fieldId){
 }
 function historyAddEvent(){closeModal('modalHistory');openGrazingModal(historyFieldId);}
 
-// ── MOISTURE ─────────────────────────────────────────────────
-function openMoistureModal(preFieldId){
-  const fields=loadFields();if(!fields.length){alert('Add a field first.');return;}
-  document.getElementById('mField').innerHTML=fields.map(f=>`<option value="${f.id}"${f.id===preFieldId?' selected':''}>${f.name}</option>`).join('');
-  document.getElementById('mDate').value=todayStr();
-  document.getElementById('mPct').value='';
-  document.getElementById('mDepth').value='20';
-  document.getElementById('mSensor').value='';
-  document.getElementById('mNotes').value='';
-  openModal('modalMoisture');
-}
-function saveMoistureReading(){
-  const fieldId=document.getElementById('mField').value;
-  const pct=parseFloat(document.getElementById('mPct').value);
-  const date=document.getElementById('mDate').value;
-  const depth=parseFloat(document.getElementById('mDepth').value)||20;
-  const sensor=document.getElementById('mSensor').value.trim();
-  const notes=document.getElementById('mNotes').value.trim();
-  if(!date||isNaN(pct)||pct<0||pct>100){alert('Enter a valid date and moisture % (0–100).');return;}
-  const readings=loadMoisture();
-  readings.push({id:uid(),fieldId,date,time:new Date().toTimeString().slice(0,5),moisture_pct:pct,depth_cm:depth,sensor_id:sensor,notes,loggedAt:new Date().toISOString()});
-  saveMoisture(readings);
-  closeModal('modalMoisture');
-  const field=loadFields().find(f=>f.id===fieldId);
-  setStatus(`Moisture logged: ${pct}% at ${depth}cm — ${field.name}`);
-}
-function importSensorJSON(event){
-  const file=event.target.files[0];if(!file)return;
-  const reader=new FileReader();
-  reader.onload=e=>{
-    try{
-      const data=JSON.parse(e.target.result);
-      const readings=Array.isArray(data)?data:(data.readings||[]);
-      if(!readings.length)throw new Error('No readings');
-      const existing=loadMoisture();
-      const ids=new Set(existing.map(r=>r.id));
-      const added=readings.filter(r=>!ids.has(r.id)).map(r=>({...r,id:r.id||uid()}));
-      saveMoisture([...existing,...added]);
-      closeModal('modalExport');alert(`Imported ${added.length} new sensor readings.`);
-    }catch(err){alert('Could not read sensor file.');}
-  };
+  
   reader.readAsText(file);event.target.value='';
-}
+
 
 // ── FIELD LIST ────────────────────────────────────────────────
 function renderFieldList(){
@@ -1067,7 +1023,7 @@ function switchTab(name){
 
 // ── DASHBOARD ─────────────────────────────────────────────────
 function renderDashboard(){
-  const fields=loadFields(),events=loadEvents(),moisture=loadMoisture();
+  const fields=loadFields(),events=loadEvents();
   const today=todayStr(),thisMonth=today.slice(0,7);
   const totalHa=fields.reduce((s,f)=>s+f.areaHa,0);
   const statuses=fields.map(f=>getStatus(f));
@@ -1111,26 +1067,6 @@ function renderDashboard(){
   }).filter(Boolean);
   document.getElementById('dashStocking').innerHTML=`<div class="card-title">Stocking rates</div>${si.length?si.join(''):'<p style="color:#9ca3af;font-size:12px">No events yet.</p>'}`;
 
-  const mByF={};moisture.forEach(r=>{if(!mByF[r.fieldId]||r.date>mByF[r.fieldId].date)mByF[r.fieldId]=r;});
-  const mRows=fields.map(f=>{
-    const r=mByF[f.id];
-    if(!r)return`<tr><td>${f.name}</td><td colspan="3" style="color:#9ca3af">No readings</td></tr>`;
-    const bar=`<div style="height:5px;background:#f0ede7;border-radius:4px;overflow:hidden;margin-top:2px"><div style="width:${r.moisture_pct}%;height:100%;background:#60a5fa;border-radius:4px"></div></div>`;
-    return`<tr><td>${f.name}</td><td>${r.moisture_pct}%${bar}</td><td>${r.depth_cm}cm</td><td>${fmtDate(r.date)}</td></tr>`;
-  });
-  document.getElementById('dashSoilMoisture').innerHTML=`
-    <div class="card-title">Soil moisture — latest readings <button class="detail-btn" style="float:right;padding:3px 8px;font-size:10px" onclick="openMoistureModal(null)">+ Add</button></div>
-    ${fields.length?`<table class="htbl"><thead><tr><th>Field</th><th>Moisture</th><th>Depth</th><th>Date</th></tr></thead><tbody>${mRows.join('')}</tbody></table>`:'<p style="color:#9ca3af;font-size:12px">No fields yet.</p>'}`;
-
-  fetchRainfall();
-}
-
-// ── RAINFALL ─────────────────────────────────────────────────
-function getFarmCenter(){
-  const fields=loadFields();if(!fields.length)return null;
-  let lats=[],lngs=[];
-  fields.forEach(f=>f.geometry.coordinates[0].forEach(([lng,lat])=>{lats.push(lat);lngs.push(lng);}));
-  return{lat:(Math.min(...lats)+Math.max(...lats))/2,lng:(Math.min(...lngs)+Math.max(...lngs))/2};
 }
 async function fetchRainfall(){
   const el=document.getElementById('dashRainfall');if(!el)return;
@@ -1197,19 +1133,14 @@ function renderReports(){
         <button class="rep-btn" onclick="exportJSON()">⬇ JSON backup</button>
         <button class="rep-btn" onclick="exportGeoJSON()">⬇ GeoJSON fields</button>
         <button class="rep-btn" onclick="exportCSV()">⬇ Events CSV</button>
-        <button class="rep-btn" onclick="exportSensorCSV()">⬇ Sensor CSV</button>
       </div></div>
-    <div class="rep-section"><div class="rep-title">DIY Soil Sensor Format</div>
-      <p style="font-size:12px;color:#6b7280;margin-bottom:8px;line-height:1.6">Your Arduino / Raspberry Pi sensor can push data in this JSON format:</p>
-      <div class="sensor-fmt">{\n  "readings": [\n    {\n      "id": "reading-unique-id",\n      "fieldId": "your-field-id",\n      "date": "2026-03-18",\n      "time": "08:30",\n      "moisture_pct": 42.5,\n      "depth_cm": 20,\n      "sensor_id": "sensor-01",\n      "notes": "after rain"\n    }\n  ]\n}</div>
-      <p style="font-size:11px;color:#9ca3af;margin-top:8px">Import via: Export &amp; Backup → Import sensor JSON</p></div>
+
     <div class="rep-section"><div class="rep-title">Interoperability</div>
       <p style="font-size:12px;color:#6b7280;line-height:1.7">
         GrazingTrack uses open standards — your data is never locked in.<br>
         • <strong>GeoJSON</strong> — field boundaries open in QGIS, ArcGIS, Google Earth<br>
         • <strong>CSV</strong> — events open in Excel, LibreOffice, Google Sheets<br>
         • <strong>JSON backup</strong> — full restore to any GrazingTrack instance<br>
-        • <strong>Sensor JSON</strong> — open format for DIY soil monitoring kits
       </p></div>`;
 }
 
@@ -1335,7 +1266,7 @@ function generatePDF(){
 }
 
 // ── EXPORT / IMPORT ──────────────────────────────────────────
-function exportJSON(){download('grazingtrack-backup.json',JSON.stringify({version:DB_VERSION,exportedAt:new Date().toISOString(),fields:loadFields(),events:loadEvents(),moisture:loadMoisture()},null,2),'application/json');}
+function exportJSON(){download('grazingtrack-backup.json',JSON.stringify({version:DB_VERSION,exportedAt:new Date().toISOString(),fields:loadFields(),events:loadEvents(),groups:loadGroups()},null,2),'application/json');}
 function exportGeoJSON(){
   const fc={type:'FeatureCollection',features:loadFields().map(f=>({type:'Feature',properties:{id:f.id,name:f.name,type:f.type,area_ha:f.areaHa,rest_target_days:f.restTarget,max_au_per_ha:f.maxAUperHa||null,color:f.color},geometry:f.geometry}))};
   download('grazingtrack-fields.geojson',JSON.stringify(fc,null,2),'application/geo+json');
@@ -1350,15 +1281,6 @@ function exportCSV(){
   });
   download('grazingtrack-events.csv',rows.map(r=>r.join(',')).join('\n'),'text/csv');
 }
-function exportSensorCSV(){
-  const fields=loadFields(),readings=loadMoisture();
-  const rows=[['Field','Date','Time','Moisture %','Depth cm','Sensor ID','Notes']];
-  readings.sort((a,b)=>a.date.localeCompare(b.date)).forEach(r=>{
-    const f=fields.find(x=>x.id===r.fieldId);
-    rows.push([f?f.name:'Unknown',r.date,r.time||'',r.moisture_pct,r.depth_cm||'',r.sensor_id||'',`"${(r.notes||'').replace(/"/g,'""')}"`]);
-  });
-  download('grazingtrack-moisture.csv',rows.map(r=>r.join(',')).join('\n'),'text/csv');
-}
 function importJSON(event){
   const file=event.target.files[0];if(!file)return;
   const reader=new FileReader();
@@ -1366,8 +1288,8 @@ function importJSON(event){
     try{
       const data=JSON.parse(e.target.result);
       if(!Array.isArray(data.fields)||!Array.isArray(data.events))throw new Error();
-      if(!confirm(`Import ${data.fields.length} fields, ${data.events.length} events, ${(data.moisture||[]).length} moisture readings?\nThis replaces all current data.`))return;
-      saveFields(data.fields);saveEvents(data.events);saveMoisture(data.moisture||[]);
+      if(!confirm(`Import ${data.fields.length} fields and ${data.events.length} events?\nThis replaces your current data.`))return;
+      saveFields(data.fields);saveEvents(data.events);
       colorIdx=data.fields.length%COLORS.length;
       drawnItems.clearLayers();restoreFieldsOnMap();renderFieldList();updateStats();updateStorageBar();deselectField();
       closeModal('modalExport');setStatus(`Imported ${data.fields.length} fields.`);
@@ -1377,7 +1299,7 @@ function importJSON(event){
 }
 function clearAllData(){
   if(!confirm('Delete ALL data? Export a backup first!\nThis cannot be undone.'))return;
-  ['gt_fields','gt_events','gt_moisture'].forEach(k=>localStorage.removeItem(k));
+  ['gt_fields','gt_events','gt_groups'].forEach(k=>localStorage.removeItem(k));
   drawnItems.clearLayers();colorIdx=0;
   renderFieldList();updateStats();updateStorageBar();deselectField();
   closeModal('modalExport');setStatus('All data cleared.');
