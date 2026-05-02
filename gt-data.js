@@ -1,43 +1,29 @@
 // ============================================================
 //  gt-data.js  —  Storage, constants, colour palette
-//  Everything that touches localStorage lives here.
 // ============================================================
 'use strict';
 
 const DB_VERSION = 4;
 
-// ── Raw key/value helpers ────────────────────────────────────
 function load(k) {
-    try {
-        const r = localStorage.getItem(k);
-        return r ? JSON.parse(r) : [];
-    } catch (e) {
-        localStorage.removeItem(k);
-        return [];
-    }
+    try { const r = localStorage.getItem(k); return r ? JSON.parse(r) : []; } catch (e) { localStorage.removeItem(k); return []; }
 }
 
 function save(k, v) {
     try {
         localStorage.setItem(k, JSON.stringify(v));
-        if (typeof updateStorageBar === 'function') updateStorageBar();
-        if (typeof checkStorageWarn === 'function') checkStorageWarn();
+        updateStorageBar();
+        checkStorageWarn();
     } catch (e) {
         if (e.name === 'QuotaExceededError') alert('Storage full! Export a backup first.');
     }
 }
 
-// ── Typed loaders / savers ───────────────────────────────────
 const loadFields = () => load('gt_fields');
 const loadEvents = () => load('gt_events');
 const saveFields = f => save('gt_fields', f);
 const saveEvents = e => save('gt_events', e);
 
-// Soil moisture
-const loadMoisture = () => load('gt_moisture');
-const saveMoisture = m => save('gt_moisture', m);
-
-// Animal groups
 function loadGroups() {
     const direct = load('gt_groups');
     if (direct.length) return direct;
@@ -46,8 +32,8 @@ function loadGroups() {
         const legacy = cfg.animalGroups || cfg.groups || [];
         if (legacy.length) {
             const migrated = legacy.map((g, i) => ({
-                id: g.id || ('grp-' + Date.now().toString(36) + '-' + i),
-                name: g.name || `Group ${i + 1}`,
+                id: g.id || uid_group(i),
+                name: g.name || `Group ${i+1}`,
                 type: g.type || 'cattle',
                 count: Number(g.count) || 0,
                 herd: g.herd || ''
@@ -65,16 +51,18 @@ function saveGroups(groups) {
         const cfg = JSON.parse(localStorage.getItem('gt_config') || '{}');
         cfg.animalGroups = groups;
         localStorage.setItem('gt_config', JSON.stringify(cfg));
-        if (typeof updateStorageBar === 'function') updateStorageBar();
+        updateStorageBar();
     } catch (e) {}
     window._animalGroups = groups;
-    if (typeof renderAnimalGroupsCard === 'function') renderAnimalGroupsCard();
 }
 
-// ── Storage usage meter ──────────────────────────────────────
+function uid_group(i) {
+    return 'grp-' + Date.now().toString(36) + '-' + i;
+}
+
 function getStorageUsage() {
     let t = 0;
-    ['gt_fields', 'gt_events', 'gt_groups', 'gt_moisture'].forEach(k => {
+    ['gt_fields', 'gt_events', 'gt_groups'].forEach(k => {
         const v = localStorage.getItem(k);
         if (v) t += v.length * 2;
     });
@@ -99,31 +87,6 @@ function checkStorageWarn() {
     }
 }
 
-// ── Sensor JSON import ───────────────────────────────────────
-function importSensorJSON(event) {
-    const file = event.target.files[0];
-    if (!file) return;
-    const reader = new FileReader();
-    reader.onload = e => {
-        try {
-            const data = JSON.parse(e.target.result);
-            const readings = data.readings || (Array.isArray(data) ? data : []);
-            if (!readings.length) { alert('No readings found in file.'); return; }
-            const existing = loadMoisture();
-            const ids = new Set(existing.map(r => r.id));
-            const added = readings.filter(r => !ids.has(r.id)).map(r => ({ ...r, id: r.id || uid() }));
-            saveMoisture([...existing, ...added]);
-            alert(`Imported ${added.length} new sensor reading(s).`);
-            if (typeof setStatus === 'function') setStatus(`Imported ${added.length} moisture readings.`);
-        } catch (err) {
-            alert('Invalid sensor JSON file. Expected { readings: [...] }');
-        }
-    };
-    reader.readAsText(file);
-    event.target.value = '';
-}
-
-// ── Field colour palette ─────────────────────────────────────
 const COLORS = [
     '#2d6a4f', '#52b788', '#40916c', '#74c69d', '#1b4332',
     '#34a0a4', '#0077b6', '#7b2d8b', '#d97706', '#dc2626',

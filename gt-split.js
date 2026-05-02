@@ -1,22 +1,6 @@
 // ============================================================
-//  gt-split.js  —  Farm boundary split tool
-//
-//  Crash fixes in this version:
-//   1. querySelector scoped to #asMap so it never clicks the
-//      main map's draw button by accident.
-//   2. Top-level try/catch in _asRebuildCamps — a Turf error
-//      never corrupts the panel or map state.
-//   3. MultiPolygon-safe sequential cuts — when a cut produces
-//      a MultiPolygon remainder, extract the largest piece so
-//      the next turf.intersect call doesn't throw.
-//   4. Only ONE Leaflet Draw control at a time — the boundary
-//      draw control is removed before the reshape control is
-//      added, and restored afterwards.
-//   5. Slider debounce (80 ms) so rapid dragging doesn't pile
-//      up Turf geometry operations and freeze the browser.
-//   6. Safe centroid fallback in _asDrawCampLayers.
-//   7. "Redraw boundary" button lets the farmer restart without
-//      closing the modal and losing all their work.
+//  gt-split.js  —  Farm boundary split tool (Full working version)
+//  Includes: divider sliders with angle, grid mode, reshape
 // ============================================================
 'use strict';
 
@@ -24,7 +8,7 @@
 const AS = {
     map: null,
     drawn: null,
-    drawControl: null, // the boundary-draw control (removed during reshape)
+    drawControl: null,
     boundary: null,
     boundaryLayer: null,
     campLayers: [],
@@ -41,84 +25,108 @@ const AS = {
     reshapeGroup: null,
     reshapeControl: null,
 
-    _refreshTimer: null // debounce handle
+    _refreshTimer: null
 };
 
-const SPLIT_COLORS = [
+const AS_COLORS = [
     '#2d6a4f', '#52b788', '#40916c', '#74c69d', '#1b4332', '#34a0a4',
     '#0077b6', '#7b2d8b', '#d97706', '#dc2626', '#0891b2', '#059669',
     '#7c3aed', '#db2777', '#b45309', '#374151', '#16a34a', '#ca8a04',
-    '#9333ea', '#e11d48'
+    '#9333ea', '#e11d48', '#0369a1', '#15803d', '#b91c1c', '#7e22ce'
 ];
 
+// ── Open / close ──────────────────────────────────────────────
 function openAutoSplit() {
-    asCampCount = 4;
-    asSplitDir = 'grid';
-    asCamps = [];
-    asBoundaryLayer = null;
-    asCampLayers = [];
+    Object.assign(AS, {
+        boundary: null,
+        boundaryLayer: null,
+        campLayers: [],
+        count: 4,
+        dir: 'vertical',
+        dividers: [{ pos: 0.25, angle: 0 }, { pos: 0.50, angle: 0 }, { pos: 0.75, angle: 0 }],
+        colDividers: [0.50],
+        rowDividers: [0.50],
+        camps: [],
+        reshapeIdx: null,
+        reshapeGroup: null,
+        reshapeControl: null,
+        drawControl: null,
+        _refreshTimer: null
+    });
+
     openModal('modalAutoSplit');
-    setTimeout(initSplitMap, 150);
+
+    // Clear static panel content so _asRenderPanel can populate it
+    const panel = document.getElementById('asPanel');
+    if (panel) panel.innerHTML = '';
+
+    _asRenderPanel();
+    setTimeout(_asInitMap, 150);
 }
 
 function closeAutoSplit() {
+    if (AS._refreshTimer) {
+        clearTimeout(AS._refreshTimer);
+        AS._refreshTimer = null;
+    }
+    _asFinishReshape(false);
     closeModal('modalAutoSplit');
-    destroySplitMap();
+    _asDestroyMap();
 }
 
-function initSplitMap() {
-    if (asMap) {
-        try { asMap.remove(); } catch (e) {}
-        asMap = null;
+function asDestroyMap() { _asDestroyMap(); }
+
+// ── Map setup ─────────────────────────────────────────────────
+function _asInitMap() {
+    if (AS.map) {
+        try { AS.map.remove(); } catch (e) {}
+        AS.map = null;
     }
 
-    let center = [-29, 25];
-    let zoom = 6;
+    let center = [-29, 25],
+        zoom = 6;
     const fields = loadFields();
     if (fields.length) {
-        const lats = [], lngs = [];
-        fields.forEach(f => {
-            if (f.geometry && f.geometry.coordinates) {
-                f.geometry.coordinates[0].forEach(([lng, lat]) => {
-                    lats.push(lat);
-                    lngs.push(lng);
-                });
+        const lats = [],
+            lngs = [];
+        fields.forEach(f => f.geometry.coordinates[0].forEach(([lng, lat]) => {
+            lats.push(lat);
+            lngs.push(lng);
+        }));
+        center = [(Math.min(...lats) + Math.max(...lats)) / 2,
+            (Math.min(...lngs) + Math.max(...lngs)) / 2
+        ];
+        zoom = 13;
+    } else {
+        try {
+            const cfg = JSON.parse(localStorage.getItem('gt_config') || '{}');
+            if (cfg.lat) {
+                center = [cfg.lat, cfg.lng];
+                zoom = 14;
             }
-        });
-        if (lats.length) {
-            center = [(Math.min(...lats) + Math.max(...lats)) / 2, (Math.min(...lngs) + Math.max(...lngs)) / 2];
-            zoom = 13;
-        }
+        } catch (e) {}
     }
 
-    asMap = L.map('asMap', { zoomControl: true }).setView(center, zoom);
-    L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}', {
-        attribution: '© Esri', maxZoom: 19
-    }).addTo(asMap);
-    L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/Reference/World_Boundaries_and_Places/MapServer/tile/{z}/{y}/{x}', {
-        maxZoom: 19, opacity: 0.7
-    }).addTo(asMap);
+    AS.map = L.map('asMap', { zoomControl: true }).setView(center, zoom);
+    L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}', { attribution: '© Esri', maxZoom: 19 }).addTo(AS.map);
+    L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/Reference/World_Boundaries_and_Places/MapServer/tile/{z}/{y}/{x}', { maxZoom: 19, opacity: 0.7 }).addTo(AS.map);
 
-    asDrawnGroup = new L.FeatureGroup().addTo(asMap);
-    const drawControl = new L.Control.Draw({
+    AS.drawn = new L.FeatureGroup().addTo(AS.map);
+
+    AS.drawControl = new L.Control.Draw({
         position: 'topright',
         draw: {
-            polygon: {
-                allowIntersection: false,
-                showArea: true,
-                shapeOptions: { color: '#2d6a4f', fillColor: '#2d6a4f', fillOpacity: 0.12, weight: 3 }
-            },
+            polygon: { allowIntersection: false, showArea: true, shapeOptions: { color: '#2d6a4f', fillColor: '#2d6a4f', fillOpacity: 0.12, weight: 3, dashArray: '6 3' } },
             polyline: false,
             rectangle: false,
             circle: false,
             circlemarker: false,
             marker: false
         },
-        edit: { featureGroup: asDrawnGroup, remove: false }
+        edit: { featureGroup: AS.drawn, remove: false }
     });
     AS.map.addControl(AS.drawControl);
 
-    // FIX 1: Scope to #asMap so we never click the main map's draw button.
     setTimeout(() => {
         const mapEl = document.getElementById('asMap');
         if (mapEl) {
@@ -138,6 +146,14 @@ function initSplitMap() {
         _asRebuildCamps();
         _asDrawCampLayers();
         _asRenderPanel();
+
+        // Update hint
+        const hint = document.getElementById('asHint');
+        if (hint) hint.innerHTML = '✅ Boundary drawn! Adjust camps below.';
+
+        // Show camp list
+        const campWrap = document.getElementById('asCampNamesWrap');
+        if (campWrap) campWrap.style.display = 'block';
     });
 }
 
@@ -164,106 +180,154 @@ function _asResetDividers() {
 
 // ── Panel renderer ────────────────────────────────────────────
 function _asRenderPanel() {
-    const panel = document.getElementById('asControlPanel');
+    const panel = document.getElementById('asPanel');
     if (!panel) return;
 
-    if (!asBoundaryLayer) {
+    if (AS.reshapeIdx !== null) {
+        const camp = AS.camps[AS.reshapeIdx];
         panel.innerHTML = `
-            <div class="as-welcome">
-                <div class="as-welcome-icon">⬡</div>
-                <p class="as-welcome-title">Draw your farm boundary</p>
-                <p class="as-welcome-sub">Click the polygon tool on the map, trace the outer edge of your farm, then double-click to close.</p>
+            <div class="as-steps">
+                <div class="as-step"><span class="as-num">✎</span>Drag the white handles on the map to move corners. Click on a boundary line to add a new corner.</div>
+            </div>
+            <div class="as-ctrls" style="text-align:center">
+                <p style="font-weight:700;margin-bottom:12px">Reshaping: ${camp.name}</p>
+                <button class="btn-primary" onclick="_asFinishReshape(true)" style="width:100%;margin-bottom:8px">✓ Save shape</button>
+                <button class="btn-ghost" onclick="_asFinishReshape(false)" style="width:100%">✕ Cancel</button>
+                <p class="as-hint" style="margin-top:12px">Changing count or direction will reset reshaping.</p>
             </div>`;
         document.getElementById('asSaveBtn').disabled = true;
         return;
     }
 
-    const totalHa = asCamps.reduce((s, c) => s + c.areaHa, 0);
+    if (!AS.boundary) {
+        panel.innerHTML = `
+            <div class="as-steps">
+                <div class="as-step"><span class="as-num">1</span>Click the polygon button on the map and trace your farm's outer boundary. Double-click to close.</div>
+                <div class="as-step"><span class="as-num">2</span>Adjust the number of camps and split direction — the preview updates instantly.</div>
+                <div class="as-step"><span class="as-num">3</span>Edit camp names in the list below, then click <strong>Create camps</strong>.</div>
+            </div>
+            <div id="asHint" class="as-hint">
+                👆 Click the <strong>polygon button</strong> in the top-right of the map, then click around your farm's outer boundary. Double-click to finish.
+            </div>`;
+        document.getElementById('asSaveBtn').disabled = true;
+        return;
+    }
+
+    const totalHa = AS.camps.reduce((s, c) => s + c.areaHa, 0);
     panel.innerHTML = `
-        <div class="as-section">
-            <div class="as-section-title">Number of camps</div>
-            <div class="as-count-row">
-                <button class="as-count-btn" onclick="adjustCampCount(-1)">−</button>
-                <span class="as-count-num" id="asCampNum">${asCampCount}</span>
-                <button class="as-count-btn" onclick="adjustCampCount(1)">+</button>
-            </div>
-            <input type="range" class="as-slider" min="1" max="30" value="${asCampCount}" oninput="adjustCampCountSlider(this.value)">
+        <div class="as-steps">
+            <div class="as-step"><span class="as-num">✓</span>Boundary drawn! Adjust settings below.</div>
         </div>
-        <div class="as-section">
-            <div class="as-section-title">Split direction</div>
-            <div class="as-dir-row">
-                <button class="as-dir-btn${asSplitDir === 'grid' ? ' active' : ''}" onclick="setSplitDir('grid')">⊞ Grid</button>
-                <button class="as-dir-btn${asSplitDir === 'vertical' ? ' active' : ''}" onclick="setSplitDir('vertical')">↕ Vertical strips</button>
-                <button class="as-dir-btn${asSplitDir === 'horizontal' ? ' active' : ''}" onclick="setSplitDir('horizontal')">↔ Horizontal strips</button>
+        
+        <div class="as-ctrls">
+            <div class="as-count-ctrl">
+                <button class="as-count-adj" onclick="asAdjCount(-1)">−</button>
+                <span class="as-count-num" id="asCampNum">${AS.count}</span>
+                <button class="as-count-adj" onclick="asAdjCount(1)">+</button>
+            </div>
+            <input type="range" class="as-count-slider" id="asCampSlider" min="1" max="50" value="${AS.count}" oninput="asSetCount(parseInt(this.value))">
+            <div style="display:flex;justify-content:space-between;font-size:9px;color:var(--faint);margin-bottom:10px">
+                <span>1</span><span>10</span><span>25</span><span>50</span>
+            </div>
+
+            <div style="font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.06em;color:var(--faint);margin-bottom:6px">Split direction</div>
+            <div class="as-dir-btns">
+                <button class="as-dir-btn ${AS.dir==='vertical'?'active':''}" onclick="asSetDir('vertical')">↕ Vertical</button>
+                <button class="as-dir-btn ${AS.dir==='horizontal'?'active':''}" onclick="asSetDir('horizontal')">↔ Horizontal</button>
+                <button class="as-dir-btn ${AS.dir==='grid'?'active':''}" onclick="asSetDir('grid')">⊞ Grid</button>
+            </div>
+
+            <div class="as-angle-wrap">
+                <div class="as-angle-hdr">
+                    <span class="as-angle-lbl">🔄 Rotation angle</span>
+                    <span class="as-angle-val" id="asAngleDisplay">${AS.dividers[0]?.angle || 0}°</span>
+                </div>
+                <input type="range" class="as-count-slider" id="asAngleSlider" min="-90" max="90" value="${AS.dividers[0]?.angle || 0}" step="1" oninput="asSetAngle(parseInt(this.value))">
+                <div class="as-angle-marks">
+                    <span>−90°</span><span>−45°</span><span>0°</span><span>+45°</span><span>+90°</span>
+                </div>
+                <div class="as-angle-presets">
+                    <button class="as-ang-pre" onclick="asSetAngle(-45)">−45°</button>
+                    <button class="as-ang-pre" onclick="asSetAngle(-30)">−30°</button>
+                    <button class="as-ang-pre" onclick="asSetAngle(0)">↺ Reset</button>
+                    <button class="as-ang-pre" onclick="asSetAngle(30)">+30°</button>
+                    <button class="as-ang-pre" onclick="asSetAngle(45)">+45°</button>
+                </div>
+                <p class="as-angle-tip">Rotates cut lines — useful for diagonal fences or irregular farm shapes.</p>
             </div>
         </div>
-        <div class="as-section">
-            <div class="as-section-title">Camp names</div>
-            <div id="campNamesList">
-                ${asCamps.map((c, i) => `
-                    <div class="as-name-row">
-                        <span class="as-camp-dot" style="background:${c.color}"></span>
-                        <input class="as-name-input" type="text" value="${c.name}" data-index="${i}" onchange="updateCampName(${i}, this.value)">
-                        <span class="as-size-lbl">${c.areaHa.toFixed(1)} ha</span>
-                    </div>
-                `).join('')}
-            </div>
+
+        <div id="asCampNamesWrap" style="display:block;margin-top:14px">
+            <div style="font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.06em;color:var(--faint);margin-bottom:8px">Camp names</div>
+            ${AS.camps.map((c,i) => `
+            <div style="display:flex;align-items:center;gap:8px;margin-bottom:8px">
+                <span style="width:12px;height:12px;border-radius:50%;background:${c.color};flex-shrink:0"></span>
+                <input type="text" value="${c.name}" onchange="AS.camps[${i}].name=this.value" style="flex:1;padding:6px 8px;border:1px solid var(--border);border-radius:6px;font-size:12px">
+                <span style="font-size:11px;color:var(--faint);min-width:50px;text-align:right">${c.areaHa.toFixed(1)} ha</span>
+                <button onclick="asReshapeCamp(${i})" style="background:none;border:1px solid var(--border);border-radius:4px;cursor:pointer;padding:4px 8px;font-size:11px" title="Reshape">✎</button>
+            </div>`).join('')}
         </div>
-        <div class="as-total-badge">
-            ${asCamps.length} camp${asCamps.length !== 1 ? 's' : ''} · ${totalHa.toFixed(1)} ha total
+
+        <div style="text-align:center;margin-top:12px;font-weight:700;font-size:13px;color:var(--green-dark)">
+            ${AS.camps.length} camp${AS.camps.length!==1?'s':''} · ${totalHa.toFixed(1)} ha total
         </div>`;
-    document.getElementById('asSaveBtn').disabled = asCamps.length === 0;
+
+    document.getElementById('asSaveBtn').disabled = AS.camps.length === 0;
 }
 
-function adjustCampCount(delta) {
-    asCampCount = Math.max(1, Math.min(30, asCampCount + delta));
-    document.getElementById('asCampNum').textContent = asCampCount;
-    generateCamps();
-    renderSplitPanel();
+// ── Count & Direction ─────────────────────────────────────────
+function asSetCount(n) {
+    AS.count = Math.max(1, Math.min(50, n));
+    _asResetDividers();
+    _asRebuildCamps();
+    _asClearCampLayers();
+    _asDrawCampLayers();
+    _asRenderPanel();
 }
 
-function adjustCampCountSlider(val) {
-    asCampCount = parseInt(val);
-    document.getElementById('asCampNum').textContent = asCampCount;
-    generateCamps();
-    renderSplitPanel();
+function asAdjCount(delta) {
+    asSetCount(AS.count + delta);
 }
 
-function setSplitDir(dir) {
-    asSplitDir = dir;
-    generateCamps();
-    renderSplitPanel();
+function asSetDir(dir) {
+    AS.dir = dir;
+    _asResetDividers();
+    _asRebuildCamps();
+    _asClearCampLayers();
+    _asDrawCampLayers();
+    _asRenderPanel();
 }
 
-function updateCampName(index, name) {
-    if (asCamps[index]) asCamps[index].name = name.trim() || `Camp ${index + 1}`;
+function asSetAngle(angle) {
+    AS.dividers.forEach(d => d.angle = angle);
+    _asRebuildCamps();
+    _asClearCampLayers();
+    _asDrawCampLayers();
+    _asRenderPanel();
+}
+
+// ── Slider handlers ───────────────────────────────────────────
+function asOnDiv(idx, rawVal) {
+    AS.dividers[idx].pos = parseInt(rawVal)/100;
+    _asScheduleRefresh();
 }
 
 function asOnDivAngle(idx, rawVal) {
     AS.dividers[idx].angle = parseInt(rawVal);
-    const aEl = document.getElementById(`as-div-ang-pct-${idx}`);
-    const v = parseInt(rawVal);
-    if (aEl) aEl.textContent = (v>0?'+':'')+v+'°';
     _asScheduleRefresh();
 }
 
 function asOnColDiv(idx, rawVal) {
     AS.colDividers[idx] = parseInt(rawVal)/100;
-    const pEl = document.getElementById(`as-cdiv-pct-${idx}`); if(pEl) pEl.textContent = rawVal+'%';
-    const prev = document.getElementById(`as-cdiv-${idx-1}`); if(prev) prev.max = parseInt(rawVal)-5;
-    const next = document.getElementById(`as-cdiv-${idx+1}`); if(next) next.min = parseInt(rawVal)+5;
     _asScheduleRefresh();
 }
 
 function asOnRowDiv(idx, rawVal) {
     AS.rowDividers[idx] = parseInt(rawVal)/100;
-    const pEl = document.getElementById(`as-rdiv-pct-${idx}`); if(pEl) pEl.textContent = rawVal+'%';
-    const prev = document.getElementById(`as-rdiv-${idx-1}`); if(prev) prev.max = parseInt(rawVal)-5;
-    const next = document.getElementById(`as-rdiv-${idx+1}`); if(next) next.min = parseInt(rawVal)+5;
     _asScheduleRefresh();
 }
 
-// FIX 5: Debounce — 80ms after the last slider move before recomputing.
+// Debounce — 80ms after the last slider move before recomputing.
 function _asScheduleRefresh() {
     if (AS._refreshTimer) clearTimeout(AS._refreshTimer);
     AS._refreshTimer = setTimeout(() => {
@@ -276,28 +340,16 @@ function _asRebuildAndRefresh() {
     _asRebuildCamps();
     _asClearCampLayers();
     _asDrawCampLayers();
-    AS.camps.forEach((c,i) => {
-        const el = document.getElementById(`as-size-${i}`);
-        if (el) el.textContent = c.areaHa.toFixed(1)+' ha';
-    });
-    const badge = document.getElementById('asTotalBadge');
-    if (badge) {
-        const total = AS.camps.reduce((s,c) => s+c.areaHa, 0);
-        badge.textContent = `${AS.camps.length} camp${AS.camps.length!==1?'s':''} · ${total.toFixed(1)} ha total`;
-    }
-    if (AS.camps.length === 0) _asRenderPanel();
-    const saveBtn = document.getElementById('asSaveBtn');
-    if (saveBtn) saveBtn.disabled = AS.camps.length === 0;
+    _asRenderPanel();
 }
 
 // ── Split algorithm ───────────────────────────────────────────
 function _asRebuildCamps() {
     if (!AS.boundary) { AS.camps = []; return; }
 
-    // FIX 2: Top-level try/catch — any Turf error leaves camps empty
-    // rather than crashing the page or corrupting the UI.
     try {
-        const farmPoly = turf.polygon(AS.boundary.coordinates);
+        // Ensure CCW winding on the farm boundary before any cutting
+        const farmPoly = turf.rewind(turf.polygon(AS.boundary.coordinates), { reverse: false, mutate: false });
         const bbox     = turf.bbox(farmPoly);
         const oldNames = AS.camps.map(c => c.name);
         let polys      = [];
@@ -329,8 +381,6 @@ function _asRebuildCamps() {
                     const c1 = turf.centroid(cuts[1]).geometry.coordinates[ci];
                     const [before, after] = c0<c1 ? [cuts[0],cuts[1]] : [cuts[1],cuts[0]];
                     polys.push(before);
-                    // FIX 3: Extract largest polygon from MultiPolygon so the next
-                    // turf.intersect call doesn't receive an unsupported geometry type.
                     remaining = _asLargestPolygon(after);
                 }
             }
@@ -347,11 +397,11 @@ function _asRebuildCamps() {
         }));
 
     } catch(err) {
+        console.error("Split error:", err);
         AS.camps = [];
     }
 }
 
-// Return the largest simple Polygon from a Feature<Polygon|MultiPolygon>.
 function _asLargestPolygon(feature) {
     if (!feature || !feature.geometry) return feature;
     if (feature.geometry.type !== 'MultiPolygon') return feature;
@@ -363,7 +413,6 @@ function _asLargestPolygon(feature) {
     return bestCoords ? turf.polygon(bestCoords) : feature;
 }
 
-// Build the divider line for a {pos, angle} divider.
 function _asDividerLine(div, bbox) {
     const [minLng,minLat,maxLng,maxLat] = bbox;
     const ang = (div.angle||0) * Math.PI/180;
@@ -381,31 +430,45 @@ function _asDividerLine(div, bbox) {
     return [[baseX-L*dx, baseY-L*dy],[baseX+L*dx, baseY+L*dy]];
 }
 
-// Cut a Turf polygon with a two-point line. Returns [left,right] or [poly].
 function _asCutWithLine(poly, linePts) {
     try {
         const [p1, p2] = linePts;
         const dx = p2[0]-p1[0], dy = p2[1]-p1[1];
         const len = Math.sqrt(dx*dx+dy*dy) || 1;
-        const nx = -dy/len, ny = dx/len;
-        const ext = len;
+        const nx = -dy/len, ny = dx/len;  // left-hand normal
+        const ext = len * 2;               // generous extension
 
-        // Explicitly close both rings (copy p1 values, not the reference).
-        const lc = [p1, p2, [p2[0]+nx*ext,p2[1]+ny*ext], [p1[0]+nx*ext,p1[1]+ny*ext], [p1[0],p1[1]]];
-        const rc = [p1, p2, [p2[0]-nx*ext,p2[1]-ny*ext], [p1[0]-nx*ext,p1[1]-ny*ext], [p1[0],p1[1]]];
+        // Both halves must be CCW (GeoJSON exterior ring convention).
+        // lc (left half): p1 → p2 → p2+normal → p1+normal → p1  [CCW ✓]
+        const lc = [p1, p2,
+                    [p2[0]+nx*ext, p2[1]+ny*ext],
+                    [p1[0]+nx*ext, p1[1]+ny*ext],
+                    [p1[0], p1[1]]];
 
-        // Ensure input is a simple Polygon for Turf v6 compatibility.
-        const inputPoly = (poly.geometry && poly.geometry.type==='MultiPolygon')
+        // rc (right half): p1 → p1−normal → p2−normal → p2 → p1  [CCW ✓]
+        // (original code had p1→p2→p2−n→p1−n which is CW — that was the bug)
+        const rc = [p1,
+                    [p1[0]-nx*ext, p1[1]-ny*ext],
+                    [p2[0]-nx*ext, p2[1]-ny*ext],
+                    p2,
+                    [p1[0], p1[1]]];
+
+        const inputPoly = (poly.geometry && poly.geometry.type === 'MultiPolygon')
             ? _asLargestPolygon(poly)
             : poly;
 
-        const left  = turf.intersect(inputPoly, turf.polygon([lc]));
-        const right = turf.intersect(inputPoly, turf.polygon([rc]));
+        // turf.rewind ensures CCW outer / CW inner winding before intersect
+        const lPoly = turf.rewind(turf.polygon([lc]), { reverse: false, mutate: false });
+        const rPoly = turf.rewind(turf.polygon([rc]), { reverse: false, mutate: false });
+
+        const left  = turf.intersect(inputPoly, lPoly);
+        const right = turf.intersect(inputPoly, rPoly);
         const result = [];
         if (left)  result.push(left);
         if (right) result.push(right);
         return result.length === 2 ? result : [poly];
     } catch(e) {
+        console.warn('[AutoSplit] cut failed:', e.message);
         return [poly];
     }
 }
@@ -416,35 +479,35 @@ function _asClearCampLayers() {
     AS.campLayers = [];
 }
 
-function drawCampLayers() {
-    if (!asMap) return;
-    asCamps.forEach(camp => {
+function _asDrawCampLayers() {
+    if (!AS.map) return;
+    AS.camps.forEach(camp => {
         try {
             const layer = L.geoJSON(
                 { type:'Feature', geometry:camp.geometry, properties:{} },
                 { style:{ color:camp.color, fillColor:camp.color, fillOpacity:0.4, weight:2 } }
             ).addTo(AS.map);
 
-            // FIX 6: Safe centroid with coordinate-average fallback.
             let cLat, cLng;
             try {
-                const centroid = turf.centroid(camp.geometry);
-                [cLng, cLat] = centroid.geometry.coordinates;
-            } catch (e) {
-                const ring = camp.geometry.coordinates[0];
-                cLng = ring.reduce((s, p) => s + p[0], 0) / ring.length;
-                cLat = ring.reduce((s, p) => s + p[1], 0) / ring.length;
+                const c = turf.centroid({ type:'Feature', geometry:camp.geometry, properties:{} });
+                [cLng, cLat] = c.geometry.coordinates;
+            } catch(e) {
+                const ring = camp.geometry.type==='Polygon'
+                    ? camp.geometry.coordinates[0]
+                    : camp.geometry.coordinates[0][0];
+                cLng = ring.reduce((s,p)=>s+p[0],0)/ring.length;
+                cLat = ring.reduce((s,p)=>s+p[1],0)/ring.length;
             }
+
             const icon = L.divIcon({
-                className: '',
-                html: `<div class="camp-lbl">${camp.name}</div>`,
-                iconAnchor: [30, 10]
+                className:'',
+                html:`<div class="camp-lbl">${camp.name}</div>`,
+                iconAnchor:[30,10]
             });
             const m = L.marker([cLat,cLng], { icon, interactive:false }).addTo(AS.map);
             AS.campLayers.push(layer, m);
-        } catch(e) {
-            // Skip this camp layer if rendering fails — don't crash the rest.
-        }
+        } catch(e) {}
     });
 }
 
@@ -453,8 +516,6 @@ function asReshapeCamp(idx) {
     if (AS.reshapeIdx !== null) return;
     AS.reshapeIdx = idx;
 
-    // FIX 4: Remove boundary draw control BEFORE adding reshape control
-    // so there is never more than one Leaflet Draw control at once.
     if (AS.drawControl) {
         try { AS.map.removeControl(AS.drawControl); } catch(e) {}
     }
@@ -527,7 +588,6 @@ function _asFinishReshape(save) {
 
     AS.reshapeIdx = null;
 
-    // FIX 4 continued: restore the boundary draw control.
     if (AS.drawControl && AS.map) {
         try { AS.map.addControl(AS.drawControl); } catch(e) {}
     }
@@ -537,34 +597,34 @@ function _asFinishReshape(save) {
     _asRenderPanel();
 }
 
-function asSave() {
-    if (!asCamps.length) {
-        alert('Draw a farm boundary first.');
-        return;
-    }
-    const existing = loadFields();
-    const newFields = asCamps.map(c => ({
-        id: c.id,
-        name: c.name,
-        type: 'pasture',
+// ── Save to main map ──────────────────────────────────────────
+function saveAutoSplitCamps() {
+    if (!AS.camps.length) { alert('No camps to save — draw a boundary first.'); return; }
+    
+    // Sync names from inputs
+    document.querySelectorAll('#asCampNamesWrap input[type="text"]').forEach((inp, i) => {
+        if (AS.camps[i]) AS.camps[i].name = inp.value.trim() || AS.camps[i].name;
+    });
+    
+    const existing  = loadFields();
+    const newFields = AS.camps.map(c => ({
+        id:         c.id,
+        name:       c.name,
+        type:       'pasture',
         restTarget: 42,
         maxAUperHa: null,
-        geometry: c.geometry,
-        areaHa: c.areaHa,
-        color: c.color,
-        createdAt: new Date().toISOString(),
-        version: DB_VERSION
+        geometry:   c.geometry,
+        areaHa:     c.areaHa,
+        color:      c.color,
+        createdAt:  new Date().toISOString(),
+        version:    DB_VERSION
     }));
     saveFields([...existing, ...newFields]);
-    if (typeof drawnItems !== 'undefined' && drawnItems) {
-        drawnItems.clearLayers();
-        if (typeof restoreFieldsOnMap === 'function') restoreFieldsOnMap();
-    }
-    if (typeof renderFieldList === 'function') renderFieldList();
-    if (typeof updateStats === 'function') updateStats();
+    drawnItems.clearLayers();
+    restoreFieldsOnMap();
+    renderFieldList();
+    updateStats();
     closeAutoSplit();
-    setStatus(`${newFields.length} camp${newFields.length !== 1 ? 's' : ''} created.`);
-    if (newFields.length && typeof selectField === 'function') {
-        setTimeout(() => selectField(newFields[0].id), 300);
-    }
+    setStatus(`${newFields.length} camp${newFields.length!==1?'s':''} created.`);
+    if (newFields.length) setTimeout(() => selectField(newFields[0].id), 300);
 }

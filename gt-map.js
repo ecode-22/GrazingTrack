@@ -3,34 +3,69 @@
 // ============================================================
 'use strict';
 
-// COLORS is defined in gt-data.js, but we need to ensure it's available
-// The functions that need COLORS will access the global variable.
-
-// ── Map state ─────────────────────────────────────────────────
 let map, drawnItems, drawControl;
 let pendingLayer = null;
 let selectedFieldId = null;
 let currentTool = 'select';
 let vertexCount = 0;
 
-// ── Map initialisation ───────────────────────────────────────
+// ── NDVI overlay ──────────────────────────────────────────────
+let ndviLayer = null;
+let ndviActive = false;
+
+/** Returns the most recent available MODIS 8-day composite date (≈14 day lag). */
+function _ndviRecentDate() {
+    const d = new Date();
+    d.setDate(d.getDate() - 14);
+    const jan1 = new Date(d.getFullYear(), 0, 1);
+    const doy = Math.floor((d - jan1) / 86400000); // 0-indexed
+    const period = Math.floor(doy / 8) * 8;
+    const snap = new Date(d.getFullYear(), 0, 1 + period);
+    return snap.toISOString().slice(0, 10);
+}
+
+function toggleNDVIPanel() {
+    const panel = document.getElementById('ndviPanel');
+    if (!panel) return;
+    ndviActive = !ndviActive;
+    panel.style.display = ndviActive ? 'block' : 'none';
+    document.getElementById('btnNDVI').classList.toggle('active', ndviActive);
+    if (ndviActive) {
+        if (!document.getElementById('ndviDate').value)
+            document.getElementById('ndviDate').value = _ndviRecentDate();
+        applyNDVI();
+    } else {
+        _removeNDVI();
+    }
+}
+
+function applyNDVI() {
+    _removeNDVI();
+    const date = document.getElementById('ndviDate').value || _ndviRecentDate();
+    const opacity = parseFloat(document.getElementById('ndviOpacity').value) || 0.72;
+    ndviLayer = L.tileLayer(
+        `https://gibs.earthdata.nasa.gov/wmts/epsg3857/best/MODIS_Terra_NDVI_8Day/default/${date}/GoogleMapsCompatible_Level9/{z}/{y}/{x}.png`, { attribution: '🛰 NASA GIBS · MODIS NDVI', maxNativeZoom: 8, maxZoom: 20, opacity, tileSize: 256 }
+    );
+    ndviLayer.addTo(map);
+    // Show error notice if tiles fail to load
+    ndviLayer.on('tileerror', () => setStatus('⚠ NDVI tiles unavailable for this date — try a different date.'));
+}
+
+function _removeNDVI() {
+    if (ndviLayer) { try { map.removeLayer(ndviLayer); } catch (e) {}
+        ndviLayer = null; }
+}
+
 function initMap() {
     map = L.map('map', { zoomControl: false }).setView([-29, 25], 6);
 
-    const sat = L.tileLayer(
-        'https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}',
-        { attribution: 'Tiles © Esri', maxZoom: 19 }
-    );
-    const osm = L.tileLayer(
-        'https://tile.openstreetmap.org/{z}/{x}/{y}.png',
-        { attribution: '© OpenStreetMap', maxZoom: 19 }
-    );
+    const sat = L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}', { attribution: 'Tiles © Esri', maxZoom: 19 });
+    const osm = L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png', { attribution: '© OpenStreetMap', maxZoom: 19 });
     const hyb = L.layerGroup([
         sat,
-        L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/Reference/World_Boundaries_and_Places/MapServer/tile/{z}/{y}/{x}',
-            { maxZoom: 19, opacity: 0.8 }
-        )
+        L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/Reference/World_Boundaries_and_Places/MapServer/tile/{z}/{y}/{x}', { maxZoom: 19, opacity: 0.8 })
     ]);
+
     sat.addTo(map);
     L.control.layers({ 'Satellite': sat, 'Satellite + Labels': hyb, 'Street map': osm }, {}, { position: 'topright' }).addTo(map);
     L.control.zoom({ position: 'topright' }).addTo(map);
@@ -53,17 +88,16 @@ function initMap() {
         pendingLayer = e.layer;
         drawnItems.addLayer(pendingLayer);
         vertexCount = 0;
-        if (typeof updateUndoBtn === 'function') updateUndoBtn();
+        updateUndoBtn();
         openModal('modalName');
         setTimeout(() => document.getElementById('inName').focus(), 80);
     });
 
-    // Fixed syntax error here:
     map.on('draw:drawvertex', e => {
         const pts = [];
         e.layers.eachLayer(l => pts.push(l.getLatLng()));
         vertexCount = pts.length;
-        if (typeof updateUndoBtn === 'function') updateUndoBtn();
+        updateUndoBtn();
         if (pts.length >= 3) {
             const geo = {
                 type: 'Polygon',
@@ -103,7 +137,6 @@ function initMap() {
     updateStorageBar();
 }
 
-// ── Drawing tools ─────────────────────────────────────────────
 function setTool(tool) {
     currentTool = tool;
     document.querySelectorAll('.tcrd').forEach(b => b.classList.remove('active'));
@@ -115,24 +148,16 @@ function setTool(tool) {
         document.getElementById('btnDraw').classList.add('active');
         vertexCount = 0;
         map.addControl(drawControl);
-        setTimeout(() => {
-            const btn = document.querySelector('.leaflet-draw-draw-polygon');
-            if (btn) btn.click();
-        }, 60);
-        setStatus('Click to place corners · double-click to close · Esc to cancel');
-        document.getElementById('toolHint').textContent = 'Each click adds a corner. ↩ Undo removes the last point.';
+        setTimeout(() => { const b = document.querySelector('.leaflet-draw-draw-polygon'); if (b) b.click(); }, 60);
+        setStatus('Click to place corners · double-click (or first point) to close · Esc to cancel');
+        document.getElementById('toolHint').textContent = 'Each click adds a corner. ↩ Undo removes the last point. Double-click to finish.';
         if (eb) eb.style.display = 'none';
-
     } else if (tool === 'edit') {
         document.getElementById('btnEdit').classList.add('active');
         try { map.addControl(drawControl); } catch (e) {}
-        setTimeout(() => {
-            const btn = document.querySelector('.leaflet-draw-edit-edit');
-            if (btn) btn.click();
-        }, 60);
-        setStatus('Drag handles to reshape · click Save in toolbar when done');
+        setTimeout(() => { const b = document.querySelector('.leaflet-draw-edit-edit'); if (b) b.click(); }, 60);
+        setStatus('Drag handles to reshape · click Save in the map toolbar when done');
         if (ub) ub.style.display = 'none';
-
     } else {
         document.getElementById('btnSelect').classList.add('active');
         vertexCount = 0;
@@ -158,7 +183,6 @@ function undoLastVertex() {
     updateUndoBtn();
 }
 
-// ── Field creation ────────────────────────────────────────────
 function cancelDraw() {
     if (pendingLayer) {
         drawnItems.removeLayer(pendingLayer);
@@ -174,10 +198,12 @@ function saveNewField() {
     const name = document.getElementById('inName').value.trim();
     if (!name) { alert('Please enter a field name.'); return; }
     if (!pendingLayer) return;
+
     const geo = pendingLayer.toGeoJSON().geometry;
     const area = calcAreaHa(geo);
     const color = nextColor();
     const maxAU = parseFloat(document.getElementById('inMaxAU').value) || null;
+
     const field = {
         id: uid(),
         name,
@@ -190,12 +216,15 @@ function saveNewField() {
         createdAt: new Date().toISOString(),
         version: DB_VERSION
     };
+
     styleLayer(pendingLayer, field);
     pendingLayer.options.fieldId = field.id;
     bindFieldLayer(pendingLayer, field);
+
     const fields = loadFields();
     fields.push(field);
     saveFields(fields);
+
     pendingLayer = null;
     vertexCount = 0;
     updateUndoBtn();
@@ -207,7 +236,6 @@ function saveNewField() {
     setStatus(`"${name}" saved — ${area.toFixed(1)} ha`);
 }
 
-// ── Field edit modal ──────────────────────────────────────────
 function openEditFieldModal(fieldId) {
     const field = loadFields().find(f => f.id === fieldId);
     if (!field) return;
@@ -216,6 +244,7 @@ function openEditFieldModal(fieldId) {
     document.getElementById('editType').value = field.type;
     document.getElementById('editRest').value = field.restTarget;
     document.getElementById('editMaxAU').value = field.maxAUperHa || '';
+
     const picker = document.getElementById('editColorPicker');
     picker.innerHTML = COLORS.map(c => `
         <div class="color-swatch${c === field.color ? ' chosen' : ''}"
@@ -231,11 +260,14 @@ function saveFieldEdit() {
     const id = document.getElementById('editFieldId').value;
     const name = document.getElementById('editName').value.trim();
     if (!name) { alert('Please enter a field name.'); return; }
+
     const fields = loadFields();
     const idx = fields.findIndex(f => f.id === id);
     if (idx === -1) return;
+
     const chosenSwatch = document.querySelector('.color-swatch.chosen');
     const color = chosenSwatch ? chosenSwatch.title : fields[idx].color;
+
     fields[idx] = {
         ...fields[idx],
         name,
@@ -244,6 +276,7 @@ function saveFieldEdit() {
         maxAUperHa: parseFloat(document.getElementById('editMaxAU').value) || null,
         color
     };
+
     saveFields(fields);
     drawnItems.eachLayer(layer => {
         if (layer.options.fieldId === id) {
@@ -251,13 +284,13 @@ function saveFieldEdit() {
             bindFieldLayer(layer, fields[idx]);
         }
     });
+
     closeModal('modalEditField');
     renderFieldList();
     if (selectedFieldId === id) selectField(id);
     setStatus(`"${name}" updated.`);
 }
 
-// ── Field styling ─────────────────────────────────────────────
 function styleLayer(layer, field) {
     const c = statusFillColor(field);
     layer.setStyle({ color: c, fillColor: c, fillOpacity: 0.38, weight: 2.5 });
@@ -274,28 +307,27 @@ function bindFieldLayer(layer, field) {
     layer.bindTooltip(`<strong>${field.name}</strong><br>${field.areaHa.toFixed(1)} ha`, { permanent: true, direction: 'center', className: 'field-label' });
 }
 
-// ── Field deletion ────────────────────────────────────────────
 function deleteSelected() {
     if (!selectedFieldId) return;
     const field = loadFields().find(f => f.id === selectedFieldId);
     if (!field || !confirm(`Delete "${field.name}"?\nAll grazing events will also be deleted.`)) return;
+
     drawnItems.eachLayer(l => { if (l.options.fieldId === selectedFieldId) drawnItems.removeLayer(l); });
     saveFields(loadFields().filter(f => f.id !== selectedFieldId));
     saveEvents(loadEvents().filter(e => e.fieldId !== selectedFieldId));
+
     deselectField();
     renderFieldList();
     updateStats();
     setStatus('Field deleted.');
 }
 
-// ── Field selection ───────────────────────────────────────────
 function selectField(fieldId) {
     selectedFieldId = fieldId;
     const field = loadFields().find(f => f.id === fieldId);
     if (!field) return;
-    document.querySelectorAll('.field-item').forEach(el =>
-        el.classList.toggle('selected', el.dataset.id === fieldId)
-    );
+
+    document.querySelectorAll('.field-item').forEach(el => el.classList.toggle('selected', el.dataset.id === fieldId));
     const events = loadEvents().filter(e => e.fieldId === fieldId).sort((a, b) => b.endDate.localeCompare(a.endDate));
     const last = events[0];
     const restDays = last ? daysSince(last.endDate) : null;
@@ -306,13 +338,12 @@ function selectField(fieldId) {
     let stockHTML = '';
     if (last && field.maxAUperHa) {
         const auHa = last.animalCount / field.areaHa;
-        if (auHa > field.maxAUperHa)
+        if (auHa > field.maxAUperHa) {
             stockHTML = `<div class="warn-box alert" style="margin:8px 0;font-size:11px">⚠ Last event: ${auHa.toFixed(1)} AU/ha exceeds limit of ${field.maxAUperHa} AU/ha</div>`;
+        }
     }
 
-    const endBtn = activeEvent ?
-        `<button class="detail-btn end-graze" onclick="endGrazingToday('${activeEvent.id}','${fieldId}')">⏹ End Grazing</button>` :
-        '';
+    const endBtn = activeEvent ? `<button class="detail-btn end-graze" onclick="endGrazingToday('${activeEvent.id}','${fieldId}')">⏹ End Grazing</button>` : '';
 
     document.getElementById('detailSection').style.display = 'block';
     document.getElementById('fieldDetail').innerHTML = `
@@ -331,13 +362,11 @@ function selectField(fieldId) {
             ${endBtn}
             <button class="detail-btn primary" onclick="openGrazingModal('${fieldId}')">+ Graze</button>
         </div>`;
+
     document.getElementById('btnDelete').style.display = 'flex';
     const eb = document.getElementById('btnEdit');
     if (eb) eb.style.display = 'flex';
-    drawnItems.eachLayer(l => {
-        if (l.options.fieldId === fieldId)
-            map.fitBounds(l.getBounds(), { padding: [60, 60], maxZoom: 17 });
-    });
+    drawnItems.eachLayer(l => { if (l.options.fieldId === fieldId) map.fitBounds(l.getBounds(), { padding: [60, 60], maxZoom: 17 }); });
     setStatus(`${field.name} — ${field.areaHa.toFixed(2)} ha`);
 }
 
@@ -345,11 +374,14 @@ function endGrazingToday(eventId, fieldId) {
     const events = loadEvents();
     const ev = events.find(e => e.id === eventId);
     if (!ev) return;
+
     const today = todayStr();
     const days = daysBetween(ev.startDate, today);
     const field = loadFields().find(f => f.id === fieldId);
     const name = field ? field.name : 'this field';
+
     if (!confirm(`End grazing on ${name} today?\n\n${ev.animalCount} ${ev.animalType} · ${days} day${days !== 1 ? 's' : ''} (${fmtDate(ev.startDate)} → ${fmtDate(today)})\n\nThe rest period will start from today.`)) return;
+
     ev.endDate = today;
     saveEvents(events);
     refreshMapColors();
@@ -368,17 +400,12 @@ function deselectField() {
     if (eb) eb.style.display = 'none';
 }
 
-// ── Field list ────────────────────────────────────────────────
 function renderFieldList() {
     const fields = loadFields();
     document.getElementById('fieldCount').textContent = fields.length;
     const el = document.getElementById('fieldList');
     if (!fields.length) {
-        el.innerHTML = `<div class="empty-state">
-            <div class="empty-icon">🌾</div>
-            <p class="empty-msg">No fields yet</p>
-            <p class="empty-sub">Use Draw or Auto-split to add paddocks</p>
-        </div>`;
+        el.innerHTML = `<div class="empty-state"><div class="empty-icon">🌾</div><p class="empty-msg">No fields yet</p><p class="empty-sub">Use Draw or Auto-split to add paddocks</p></div>`;
         return;
     }
     el.innerHTML = fields.map(f => {
@@ -392,13 +419,9 @@ function renderFieldList() {
             <span class="pill pill-${s.cls}">${s.label}</span>
         </div>`;
     }).join('');
-    if (selectedFieldId)
-        document.querySelectorAll('.field-item').forEach(el =>
-            el.classList.toggle('selected', el.dataset.id === selectedFieldId)
-        );
+    if (selectedFieldId) document.querySelectorAll('.field-item').forEach(el => el.classList.toggle('selected', el.dataset.id === selectedFieldId));
 }
 
-// ── Stats strip ───────────────────────────────────────────────
 function updateStats() {
     const fields = loadFields();
     const totalHa = fields.reduce((s, f) => s + f.areaHa, 0);
@@ -409,12 +432,11 @@ function updateStats() {
     document.getElementById('sReady').textContent = statuses.filter(s => s.cls === 'ready').length;
 }
 
-// ── Field status logic ────────────────────────────────────────
 function getStatus(field) {
     const events = loadEvents().filter(e => e.fieldId === field.id).sort((a, b) => b.startDate.localeCompare(a.startDate));
     if (!events.length) return { label: 'Never grazed', cls: 'none' };
-    const latest = events[0];
-    const today = todayStr();
+    const latest = events[0],
+        today = todayStr();
     if (latest.startDate <= today && latest.endDate >= today) return { label: 'Grazing now', cls: 'grazing' };
     const rest = daysSince(latest.endDate);
     if (rest < 0) return { label: 'Planned', cls: 'resting' };
@@ -426,8 +448,8 @@ function getStatus(field) {
 function getReadinessPct(field) {
     const events = loadEvents().filter(e => e.fieldId === field.id).sort((a, b) => b.startDate.localeCompare(a.startDate));
     if (!events.length) return 100;
-    const latest = events[0];
-    const today = todayStr();
+    const latest = events[0],
+        today = todayStr();
     if (latest.startDate <= today && latest.endDate >= today) return 0;
     return Math.min(100, Math.round(Math.max(0, daysSince(latest.endDate)) / field.restTarget * 100));
 }
@@ -441,7 +463,6 @@ function statusFillColor(field) {
     return field.color;
 }
 
-// ── Map restore & refresh ─────────────────────────────────────
 function restoreFieldsOnMap() {
     const fields = loadFields();
     if (!fields.length) return;
@@ -465,21 +486,15 @@ function refreshMapColors() {
     });
 }
 
-// ── Tab switching ─────────────────────────────────────────────
 function switchTab(name) {
-    document.querySelectorAll('.tab').forEach(b =>
-        b.classList.toggle('active', b.id === 'tab-' + name)
-    );
-    document.querySelectorAll('.tab-panel').forEach(p =>
-        p.classList.toggle('active', p.id === 'panel-' + name)
-    );
+    document.querySelectorAll('.tab').forEach(b => b.classList.toggle('active', b.id === 'tab-' + name));
+    document.querySelectorAll('.tab-panel').forEach(p => p.classList.toggle('active', p.id === 'panel-' + name));
     if (name === 'map') setTimeout(() => map.invalidateSize(), 50);
-    if (name === 'dashboard' && typeof renderDashboard === 'function') renderDashboard();
-    if (name === 'rotation' && typeof renderRotation === 'function') renderRotation();
-    if (name === 'reports' && typeof renderReports === 'function') renderReports();
+    if (name === 'dashboard') renderDashboard();
+    if (name === 'rotation') renderRotation();
+    if (name === 'reports') renderReports();
 }
 
-// ── Farm config ───────────────────────────────────────────────
 function loadFarmConfig() {
     try {
         const cfg = JSON.parse(localStorage.getItem('gt_config') || '{}');
@@ -488,15 +503,12 @@ function loadFarmConfig() {
             if (el) el.textContent = cfg.farmName;
         }
         if (cfg.lat && cfg.lng && map) map.setView([cfg.lat, cfg.lng], 14);
-        if (cfg.cycle === 'daynight' || cfg.grazingCycle === 'daynight')
-            localStorage.setItem('gt_daynight', '1');
+        if (cfg.cycle === 'daynight' || cfg.grazingCycle === 'daynight') localStorage.setItem('gt_daynight', '1');
         window._animalGroups = loadGroups();
     } catch (e) {}
 }
 
-// ── Boot ──────────────────────────────────────────────────────
+// ── Boot sequence ─────────────────────────────────────────────
 initMap();
 loadFarmConfig();
-setTimeout(() => {
-    if (typeof checkFirstRun === 'function') checkFirstRun();
-}, 600);
+setTimeout(() => checkFirstRun(), 600);
