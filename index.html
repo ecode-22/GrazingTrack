@@ -3,14 +3,21 @@
 
 <head>
     <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
-    <meta name="theme-color" content="#10b981">
-    <title>GrazingTrack</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>GrazingTrack PWA</title>
+
     <link rel="manifest" href="manifest.json">
-    <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css">
-    <link rel="stylesheet" href="https://unpkg.com/leaflet-draw@1.0.4/dist/leaflet.draw.css">
+
+    <!-- 1. Leaflet Core CSS -->
+    <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" integrity="sha256-p4NxAoJBhIIN+hmNHrzRCf9tD/miZyoHS5obTRR9BMY=" crossorigin="" />
+
+    <!-- 2. Leaflet Draw CSS (NEW: FIXES THE DRAWING TOOLS UI) -->
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet.draw/1.0.4/leaflet.draw.css" />
+
+    <!-- 3. Your App's CSS -->
     <link rel="stylesheet" href="style.css">
-    <script src="https://unpkg.com/@turf/turf@6/turf.min.js"></script>
+
+    <meta name="theme-color" content="#166534">
 </head>
 
 <body>
@@ -383,21 +390,25 @@
 
     <div class="install-banner" id="installBanner" onclick="installApp()">📲 Install GrazingTrack</div>
 
-    <!-- External Libraries -->
-    <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
-    <script src="https://unpkg.com/leaflet-draw@1.0.4/dist/leaflet.draw.js"></script>
-    <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
+    <!-- 1. Leaflet Core JS -->
+    <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js" integrity="sha256-20nQCchB9co0qIjJZRGuk2/Z9VM+kNiyxNV1lvTlZBo=" crossorigin=""></script>
 
-    <!-- GrazingTrack Modular App Files -->
+    <!-- 2. Leaflet Draw JS (NEW: FIXES THE L.Control.Draw ERROR) -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet.draw/1.0.4/leaflet.draw.js"></script>
+
+    <!-- 3. Leaflet Offline Plugin (FIXED URL) -->
+    <script src="https://unpkg.com/leaflet.offline@2.0.0/dist/bundle.js"></script>
+
+    <!-- 4. Your App JS Files (Make sure the file initializing your map is here!) -->
     <script src="gt-utils.js"></script>
     <script src="gt-data.js"></script>
-    <script src="gt-split.js"></script>
+    <script src="gt-map.js"></script>
     <script src="gt-events.js"></script>
     <script src="gt-dashboard.js"></script>
+    <script src="gt-split.js"></script>
     <script src="setup.js"></script>
-
-    <!-- Entry Point (Must be last) -->
-    <script src="gt-map.js"></script>
 </body>
+
+</html>
 
 </html>

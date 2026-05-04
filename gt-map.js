@@ -52,8 +52,10 @@ function applyNDVI() {
 }
 
 function _removeNDVI() {
-    if (ndviLayer) { try { map.removeLayer(ndviLayer); } catch (e) {}
-        ndviLayer = null; }
+    if (ndviLayer) {
+        try { map.removeLayer(ndviLayer); } catch (e) {}
+        ndviLayer = null;
+    }
 }
 
 function initMap() {
