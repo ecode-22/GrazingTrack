@@ -7,36 +7,147 @@ let map, drawnItems, drawControl;
 let pendingLayer = null;
 let selectedFieldId = null;
 let currentTool = 'select';
-let vertexCount = 0;
-
-// ── NDVI overlay ──────────────────────────────────────────────
+// gt-map.js: Top of file
 let ndviLayer = null;
 let ndviActive = false;
 
-/** Returns the most recent available MODIS 8-day composite date (≈14 day lag). */
 function _ndviRecentDate() {
     const d = new Date();
-    d.setDate(d.getDate() - 14);
-    const jan1 = new Date(d.getFullYear(), 0, 1);
-    const doy = Math.floor((d - jan1) / 86400000); // 0-indexed
-    const period = Math.floor(doy / 8) * 8;
-    const snap = new Date(d.getFullYear(), 0, 1 + period);
-    return snap.toISOString().slice(0, 10);
+    d.setDate(d.getDate() - 21); // 21 days back to guarantee data availability
+    return d.toISOString().slice(0, 10);
 }
 
 function toggleNDVIPanel() {
+    console.log("NDVI Button Clicked"); // This will show in the browser inspect tool
     const panel = document.getElementById('ndviPanel');
-    if (!panel) return;
+    const btn = document.getElementById('btnNDVI');
+
+    if (!panel) {
+        alert("Error: ndviPanel element not found!");
+        return;
+    }
+
     ndviActive = !ndviActive;
     panel.style.display = ndviActive ? 'block' : 'none';
-    document.getElementById('btnNDVI').classList.toggle('active', ndviActive);
+    btn.classList.toggle('active', ndviActive);
+
     if (ndviActive) {
-        if (!document.getElementById('ndviDate').value)
-            document.getElementById('ndviDate').value = _ndviRecentDate();
+        const dateInput = document.getElementById('ndviDate');
+        if (dateInput && !dateInput.value) {
+            dateInput.value = _ndviRecentDate();
+        }
         applyNDVI();
+        setStatus('Satellite view active');
     } else {
         _removeNDVI();
+        setStatus('Ready');
     }
+}
+
+function applyNDVI() {
+    _removeNDVI();
+    const dateInput = document.getElementById('ndviDate');
+    const opacityInput = document.getElementById('ndviOpacity');
+
+    const date = dateInput ? dateInput.value : _ndviRecentDate();
+    const opacity = opacityInput ? parseFloat(opacityInput.value) : 0.7;
+
+    // NASA GIBS tile service
+    ndviLayer = L.tileLayer(
+        `https://gibs.earthdata.nasa.gov/wmts/epsg3857/best/MODIS_Terra_NDVI_8Day/default/${date}/GoogleMapsCompatible_Level9/{z}/{y}/{x}.png`, {
+            attribution: '🛰 NASA GIBS',
+            maxNativeZoom: 9,
+            maxZoom: 20,
+            opacity: opacity,
+            tileSize: 256
+        }
+    );
+    ndviLayer.addTo(map);
+}
+
+function _removeNDVI() {
+    if (ndviLayer && map.hasLayer(ndviLayer)) {
+        map.removeLayer(ndviLayer);
+    }
+    ndviLayer = null;
+}
+// gt-map.js: Top of file
+let ndviLayer = null;
+let ndviActive = false;
+
+function _ndviRecentDate() {
+    const d = new Date();
+    d.setDate(d.getDate() - 21); // 21 days back to guarantee data availability
+    return d.toISOString().slice(0, 10);
+}
+
+function toggleNDVIPanel() {
+    console.log("NDVI Button Clicked"); // This will show in the browser inspect tool
+    const panel = document.getElementById('ndviPanel');
+    const btn = document.getElementById('btnNDVI');
+
+    if (!panel) {
+        alert("Error: ndviPanel element not found!");
+        return;
+    }
+
+    ndviActive = !ndviActive;
+    panel.style.display = ndviActive ? 'block' : 'none';
+    btn.classList.toggle('active', ndviActive);
+
+    if (ndviActive) {
+        const dateInput = document.getElementById('ndviDate');
+        if (dateInput && !dateInput.value) {
+            dateInput.value = _ndviRecentDate();
+        }
+        applyNDVI();
+        setStatus('Satellite view active');
+    } else {
+        _removeNDVI();
+        setStatus('Ready');
+    }
+}
+
+function applyNDVI() {
+    _removeNDVI();
+    const dateInput = document.getElementById('ndviDate');
+    const opacityInput = document.getElementById('ndviOpacity');
+
+    const date = dateInput ? dateInput.value : _ndviRecentDate();
+    const opacity = opacityInput ? parseFloat(opacityInput.value) : 0.7;
+
+    // NASA GIBS tile service
+    ndviLayer = L.tileLayer(
+        `https://gibs.earthdata.nasa.gov/wmts/epsg3857/best/MODIS_Terra_NDVI_8Day/default/${date}/GoogleMapsCompatible_Level9/{z}/{y}/{x}.png`, {
+            attribution: '🛰 NASA GIBS',
+            maxNativeZoom: 9,
+            maxZoom: 20,
+            opacity: opacity,
+            tileSize: 256
+        }
+    );
+    ndviLayer.addTo(map);
+}
+
+function _removeNDVI() {
+    if (ndviLayer && map.hasLayer(ndviLayer)) {
+        map.removeLayer(ndviLayer);
+    }
+    ndviLayer = null;
+}
+
+function _removeNDVI() {
+    if (ndviLayer && map.hasLayer(ndviLayer)) {
+        map.removeLayer(ndviLayer);
+    }
+    ndviLayer = null;
+}
+
+function _removeNDVI() {
+    if (ndviLayer && map.hasLayer(ndviLayer)) {
+        map.removeLayer(ndviLayer);
+    }
+    ndviLayer = null;
 }
 
 function applyNDVI() {
@@ -44,11 +155,17 @@ function applyNDVI() {
     const date = document.getElementById('ndviDate').value || _ndviRecentDate();
     const opacity = parseFloat(document.getElementById('ndviOpacity').value) || 0.72;
     ndviLayer = L.tileLayer(
-        `https://gibs.earthdata.nasa.gov/wmts/epsg3857/best/MODIS_Terra_NDVI_8Day/default/${date}/GoogleMapsCompatible_Level9/{z}/{y}/{x}.png`, { attribution: '🛰 NASA GIBS · MODIS NDVI', maxNativeZoom: 8, maxZoom: 20, opacity, tileSize: 256 }
+        `https://gibs.earthdata.nasa.gov/wmts/epsg3857/best/MODIS_Terra_NDVI_8Day/default/${date}/GoogleMapsCompatible_Level9/{z}/{y}/{x}.png`, { attribution: '🛰 NASA GIBS', maxNativeZoom: 9, maxZoom: 20, opacity, tileSize: 256 }
     );
     ndviLayer.addTo(map);
-    // Show error notice if tiles fail to load
-    ndviLayer.on('tileerror', () => setStatus('⚠ NDVI tiles unavailable for this date — try a different date.'));
+    ndviLayer.on('tileerror', () => setStatus('⚠ NDVI tiles unavailable for this date.'));
+}
+
+function _removeNDVI() {
+    if (ndviLayer && map.hasLayer(ndviLayer)) {
+        try { map.removeLayer(ndviLayer); } catch (e) {}
+    }
+    ndviLayer = null;
 }
 
 function _removeNDVI() {
