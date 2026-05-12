@@ -35,7 +35,13 @@
             <div class="tool-grid">
                 <button class="ndvi-toggle-btn" id="btnNDVI" onclick="toggleNDVIPanel()">
     🛰️ Vegetation Heatmap (NDVI)
-</button>
+    <button class="tab" id="tab-analytics" onclick="switchTab('analytics')">📊 Analytics</button>
+
+                <!-- After the reports panel, add: -->
+                <div class="tab-panel" id="panel-analytics">
+                    <!-- Rendered dynamically by gt-analytics.js -->
+                </div>
+                </button>
 
                 <div class="ndvi-panel" id="ndviPanel" style="display:none; margin-top:10px; padding:10px; border:1px solid #ddd; border-radius:8px; background:#fff;">
                     <div style="height:10px; border-radius:5px; margin-bottom:4px; background:linear-gradient(to right, #7c2d12, #ca8a04, #4ade80, #14532d);"></div>
@@ -381,7 +387,7 @@
     </div>
 
     <div class="install-banner" id="installBanner" onclick="installApp()">📲 Install GrazingTrack</div>
-
+    <script src="gt-analytics.js"></script>
     <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
     <script src="https://unpkg.com/leaflet-draw@1.0.4/dist/leaflet.draw.js"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
@@ -1894,15 +1900,15 @@
         function setupBack(){ if(setupStep>1){setupStep--;renderSetup();} }
 
         // ── TABS & UTILS ─────────────────────────────────────────────
-        function switchTab(name){
-            document.querySelectorAll('.tab').forEach(b=>b.classList.toggle('active',b.id==='tab-'+name));
-            document.querySelectorAll('.tab-panel').forEach(p=>p.classList.toggle('active',p.id==='panel-'+name));
-            if(name==='map') setTimeout(()=>map.invalidateSize(),50);
-            if(name==='dashboard') renderDashboard();
-            if(name==='rotation') renderRotation();
-            if(name==='reports') renderReports();
-        }
-
+        function switchTab(name) {
+    document.querySelectorAll('.tab').forEach(b => b.classList.toggle('active', b.id === 'tab-' + name));
+    document.querySelectorAll('.tab-panel').forEach(p => p.classList.toggle('active', p.id === 'panel-' + name));
+    if (name === 'map') setTimeout(() => map.invalidateSize(), 50);
+    if (name === 'dashboard') renderDashboard();
+    if (name === 'rotation') renderRotation();
+    if (name === 'reports') renderReports();
+    if (name === 'analytics') renderAnalytics();  // NEW
+}
         function openModal(id){ document.getElementById(id).style.display='flex'; }
         function closeModal(id){ document.getElementById(id).style.display='none'; }
         function toggleSidebar(){
@@ -1945,6 +1951,7 @@
             }
         }catch(e){}
     </script>
+
 </body>
 
 </html>
