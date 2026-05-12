@@ -9,6 +9,12 @@ function renderAnalytics() {
     const panel = document.getElementById('panel-analytics');
     if (!panel) return;
 
+    // Make sure global functions are available
+    if (typeof loadFields === 'undefined') {
+        panel.innerHTML = '<div class="sv"><div class="empty-state"><div class="empty-icon">⚠️</div><p class="empty-msg">Loading...</p></div></div>';
+        return;
+    }
+
     const fields = loadFields();
     const events = loadEvents();
     const groups = loadGroups();
@@ -194,27 +200,27 @@ function renderAnalytics() {
                         </thead>
                         <tbody>
                             ${fieldPerformance.map(f => `
-                            <tr onclick="switchTab('map');setTimeout(()=>selectField('${f.id}'),100)" style="cursor:pointer">
+                            <tr onclick="if(typeof switchTab === 'function'){switchTab('map');setTimeout(function(){if(typeof selectField === 'function') selectField('${f.id}');},100)}" style="cursor:pointer">
                                 <td style="font-weight:700">
                                     <span class="field-dot" style="display:inline-block;width:8px;height:8px;background:${f.color};border-radius:50%;margin-right:6px"></span>
-                                    ${f.name}
-                                </td>
-                                <td>${f.area.toFixed(1)} ha</td>
-                                <td><span class="pill pill-${f.status.cls}">${f.status.label}</span></td>
-                                <td><strong style="color:${f.restPct >= 100 ? '#16a34a' : f.restPct >= 50 ? '#d97706' : '#dc2626'}">${f.restPct}%</strong></td>
-                                <td>${f.eventCount}</td>
-                                <td>${f.totalGrazingDays}</td>
-                                <td>${f.lastGrazed ? fmtDate(f.lastGrazed) + (f.daysSinceLast !== null ? ' (' + f.daysSinceLast + 'd ago)' : '') : 'Never'}</td>
-                                <td>${f.avgAUperHa}</td>
-                                <td>
+                                    ${escapeHtml(f.name)}
+                                 </td>
+                                 <td>${f.area.toFixed(1)} ha</td>
+                                 <td><span class="pill pill-${f.status.cls}">${f.status.label}</span></td>
+                                 <td><strong style="color:${f.restPct >= 100 ? '#16a34a' : f.restPct >= 50 ? '#d97706' : '#dc2626'}">${f.restPct}%</strong></td>
+                                 <td>${f.eventCount}</td>
+                                 <td>${f.totalGrazingDays}</td>
+                                 <td>${f.lastGrazed ? fmtDate(f.lastGrazed) + (f.daysSinceLast !== null ? ' (' + f.daysSinceLast + 'd ago)' : '') : 'Never'}</td>
+                                 <td>${f.avgAUperHa}</td>
+                                 <td>
                                     <div style="display:flex;align-items:center;gap:4px">
                                         <div style="flex:1;height:5px;background:var(--border-light);border-radius:10px;overflow:hidden">
                                             <div style="height:100%;width:${f.utilization}%;background:${f.utilization > 80 ? '#f87171' : f.utilization > 40 ? '#fbbf24' : '#4ade80'};border-radius:10px"></div>
                                         </div>
                                         <span style="font-size:10px;font-weight:700">${f.utilization}%</span>
                                     </div>
-                                </td>
-                            </tr>`).join('')}
+                                 </td>
+                             </tr>`).join('')}
                         </tbody>
                     </table>
                 </div>
@@ -233,8 +239,8 @@ function renderAnalytics() {
                     <div class="grp-row" style="margin-bottom:6px">
                         <div class="grp-row-icon">${getGroupEmoji(g.type)}</div>
                         <div class="grp-row-info">
-                            <div class="grp-row-name">${g.name}</div>
-                            <div class="grp-row-sub">${g.count} ${g.type}${g.herd ? ' · ' + g.herd : ''}</div>
+                            <div class="grp-row-name">${escapeHtml(g.name)}</div>
+                            <div class="grp-row-sub">${g.count} ${g.type}${g.herd ? ' · ' + escapeHtml(g.herd) : ''}</div>
                         </div>
                     </div>`).join('') : '<p style="color:var(--text-muted);font-size:12px">No animal groups defined yet.</p>'}
             </div>
@@ -242,6 +248,16 @@ function renderAnalytics() {
     </div>`;
 
     panel.innerHTML = html;
+}
+
+function escapeHtml(str) {
+    if (!str) return '';
+    return str.replace(/[&<>]/g, function(m) {
+        if (m === '&') return '&amp;';
+        if (m === '<') return '&lt;';
+        if (m === '>') return '&gt;';
+        return m;
+    });
 }
 
 // ── Donut Chart Builder ──────────────────────────────────────
@@ -264,7 +280,7 @@ function buildDonutChart(fields) {
             stroke-dashoffset="${(-offset * circ).toFixed(2)}"
             transform="rotate(-90 ${cx} ${cy})"
             style="transition:stroke-dasharray .5s ease">
-            <title>${f.name}: ${f.areaHa.toFixed(1)} ha (${(pct*100).toFixed(1)}%)</title>
+            <title>${escapeHtml(f.name)}: ${f.areaHa.toFixed(1)} ha (${(pct*100).toFixed(1)}%)</title>
         </circle>`;
         offset += pct;
         return arc;
@@ -274,7 +290,7 @@ function buildDonutChart(fields) {
         const pct = (f.areaHa / totalHa * 100).toFixed(1);
         return `<div class="chart-legend-item">
             <span class="chart-legend-dot" style="background:${f.color}"></span>
-            <span style="flex:1">${f.name}</span>
+            <span style="flex:1">${escapeHtml(f.name)}</span>
             <span style="font-weight:700;font-size:11px">${f.areaHa.toFixed(1)} ha</span>
             <span style="color:var(--text-muted);font-size:10px">${pct}%</span>
         </div>`;
@@ -309,7 +325,7 @@ function buildStockingSummary(fields, events) {
         return `
         <div style="margin-bottom:10px">
             <div style="display:flex;justify-content:space-between;font-size:11px;margin-bottom:3px">
-                <span style="font-weight:600">${r.name}</span>
+                <span style="font-weight:600">${escapeHtml(r.name)}</span>
                 <span style="color:${r.over ? '#dc2626' : 'var(--text-secondary)'};font-weight:700">
                     ${r.auHa.toFixed(1)} AU/ha
                     ${r.max ? ' / max ' + r.max : ''}
