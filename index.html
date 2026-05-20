@@ -10,7 +10,11 @@
     <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css">
     <link rel="stylesheet" href="https://unpkg.com/leaflet-draw@1.0.4/dist/leaflet.draw.css">
     <link rel="stylesheet" href="style.css">
+
     <script src="https://unpkg.com/@turf/turf@6/turf.min.js"></script>
+    <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+    <script src="https://unpkg.com/leaflet-draw@1.0.4/dist/leaflet.draw.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
 </head>
 
 <body>
@@ -42,29 +46,24 @@
             <button class="del-btn" id="btnDelete" onclick="deleteSelected()" style="display:none">✕ Delete selected field</button>
             <button class="btn-grazing" onclick="openGrazingModal(null)">🐄 Log Grazing Event</button>
 
-            <!-- NDVI Overlay -->
-            <button class="tcrd ndvi-toggle-btn" id="btnNDVI" onclick="toggleNDVIPanel()">🛰 NDVI Overlay</button>
-            <div id="ndviPanel" style="display:none" class="ndvi-panel">
-                <div class="ndvi-legend-wrap">
-                    <div class="ndvi-grad-bar"></div>
-                    <div class="ndvi-grad-labels">
-                        <span>Bare soil</span>
-                        <span>Stressed</span>
-                        <span>Recovering</span>
-                        <span>Lush ✓</span>
-                    </div>
+            <button class="ndvi-toggle-btn" id="btnNDVI" onclick="toggleNDVIPanel()">🛰️ Vegetation Heatmap (NDVI)</button>
+            <div class="ndvi-panel" id="ndviPanel" style="display:none; margin-top:10px; padding:10px; border:1px solid #ddd; border-radius:8px; background:#fff;">
+                <div style="height:10px; border-radius:5px; margin-bottom:4px; background:linear-gradient(to right, #7c2d12, #ca8a04, #4ade80, #14532d);"></div>
+                <div style="display:flex; justify-content:space-between; font-size:9px; color:#6b7280; margin-bottom:10px;">
+                    <span>Stressed/Bare</span>
+                    <span>Lush/Dense</span>
                 </div>
                 <div class="ndvi-controls">
-                    <div class="ndvi-row">
-                        <label>📅 Date</label>
-                        <input type="date" id="ndviDate" onchange="applyNDVI()">
+                    <div style="margin-bottom:8px;">
+                        <label style="font-size:11px; font-weight:600; display:block; margin-bottom:4px;">Map Date</label>
+                        <input type="date" id="ndviDate" onchange="applyNDVI()" style="width:100%; padding:4px; font-size:12px;">
                     </div>
-                    <div class="ndvi-row">
-                        <label>☀ Opacity</label>
-                        <input type="range" id="ndviOpacity" min="0.2" max="1" step="0.05" value="0.72" oninput="applyNDVI()">
+                    <div>
+                        <label style="font-size:11px; font-weight:600; display:block; margin-bottom:4px;">Opacity</label>
+                        <input type="range" id="ndviOpacity" min="0.1" max="1.0" step="0.1" value="0.7" oninput="applyNDVI()" style="width:100%;">
                     </div>
                 </div>
-                <p class="ndvi-note">MODIS Terra · 8-day composite · 250 m resolution. Darker green = healthier, denser grass.</p>
+                <p class="ndvi-note">Uses NASA satellite data. Processing lag is ~14 days from today.</p>
             </div>
 
             <p class="tool-hint" id="toolHint">💡 Click a field on the map to select it</p>
@@ -101,11 +100,11 @@
             <button class="tab" id="tab-dashboard" onclick="switchTab('dashboard')">📊 Dashboard</button>
             <button class="tab" id="tab-rotation" onclick="switchTab('rotation')">🔄 Rotation</button>
             <button class="tab" id="tab-reports" onclick="switchTab('reports')">📄 Reports</button>
+            <button class="tab" id="tab-analytics" onclick="switchTab('analytics')">📈 Analytics</button>
         </nav>
 
         <div class="tab-panel active" id="panel-map">
             <div id="map"></div>
-            <!-- Sidebar expand button — only visible when sidebar is collapsed -->
             <button class="sb-expand-btn" id="sbExpandBtn" onclick="toggleSidebar()" title="Show sidebar">☰</button>
             <div class="map-statusbar">
                 <button class="map-menu-btn" onclick="toggleSidebar()">☰</button>
@@ -150,79 +149,31 @@
         <div class="tab-panel" id="panel-reports">
             <div class="sv" id="reportsPage"></div>
         </div>
+
+        <div class="tab-panel" id="panel-analytics">
+            <div class="sv">
+                <div class="analytics-header">
+                    <h2>📊 Advanced Farm Analytics</h2>
+                    <p>Comprehensive data visualization, weather insights, and grazing metrics</p>
+                </div>
+                <div id="analyticsContent">Loading analytics...</div>
+            </div>
+        </div>
     </main>
 
     <div class="overlay" id="modalAutoSplit" style="display:none">
         <div class="modal mxl">
             <div class="mh">
-                <div class="mh-title">⬡ Auto-split farm into camps</div>
-                <button class="mh-close" onclick="closeAutoSplit()">✕</button>
-            </div>
-            <div id="autoSplitContainer" class="as-container">
+                <div class="mh-title">⬡ Auto-split farm into camps</div><button class="mh-close" onclick="closeModal('modalAutoSplit')">✕</button></div>
+            <div class="mb">
                 <div class="as-layout">
-                    <div class="as-panel" id="asPanel">
-                        <div class="as-steps">
-                            <div class="as-step"><span class="as-num">1</span>Click the polygon button on the map and trace your farm's outer boundary. Double-click to close.</div>
-                            <div class="as-step"><span class="as-num">2</span>Adjust the number of camps and split direction — the preview updates instantly.</div>
-                            <div class="as-step"><span class="as-num">3</span>Edit camp names in the list below, then click <strong>Create camps</strong>.</div>
-                        </div>
-
-                        <div class="as-ctrls">
-                            <div class="as-count-ctrl">
-                                <button class="as-count-adj" onclick="asAdjCount(-1)">−</button>
-                                <span class="as-count-num" id="asCampNum">4</span>
-                                <button class="as-count-adj" onclick="asAdjCount(1)">+</button>
-                                <span style="font-size:11px;color:var(--faint)">camps</span>
-                            </div>
-                            <input type="range" class="as-count-slider" id="asCampSlider" min="1" max="50" value="4" oninput="asSetCount(parseInt(this.value))">
-                            <div style="display:flex;justify-content:space-between;font-size:9px;color:var(--faint);margin-bottom:10px">
-                                <span>1</span><span>10</span><span>25</span><span>50</span>
-                            </div>
-
-                            <div style="font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.06em;color:var(--faint);margin-bottom:6px">Split direction</div>
-                            <div class="as-dir-btns">
-                                <button class="as-dir-btn active" id="asDirV" onclick="asSetDir('vertical')">↕ Vertical</button>
-                                <button class="as-dir-btn" id="asDirH" onclick="asSetDir('horizontal')">↔ Horizontal</button>
-                                <button class="as-dir-btn" id="asDirG" onclick="asSetDir('grid')">⊞ Grid</button>
-                            </div>
-
-                            <div class="as-angle-wrap">
-                                <div class="as-angle-hdr">
-                                    <span class="as-angle-lbl">🔄 Rotation angle</span>
-                                    <span class="as-angle-val" id="asAngleDisplay">0°</span>
-                                </div>
-                                <input type="range" class="as-count-slider" id="asAngleSlider" min="-90" max="90" value="0" step="1" oninput="asSetAngle(parseInt(this.value))">
-                                <div class="as-angle-marks">
-                                    <span>−90°</span><span>−45°</span><span>0°</span><span>+45°</span><span>+90°</span>
-                                </div>
-                                <div class="as-angle-presets">
-                                    <button class="as-ang-pre" onclick="asSetAngle(-45)">−45°</button>
-                                    <button class="as-ang-pre" onclick="asSetAngle(-30)">−30°</button>
-                                    <button class="as-ang-pre" onclick="asSetAngle(0)">↺ Reset</button>
-                                    <button class="as-ang-pre" onclick="asSetAngle(30)">+30°</button>
-                                    <button class="as-ang-pre" onclick="asSetAngle(45)">+45°</button>
-                                </div>
-                                <p class="as-angle-tip">Rotates cut lines — useful for diagonal fences or irregular farm shapes.</p>
-                            </div>
-                        </div>
-
-                        <div id="asCampNamesWrap" style="display:none;margin-top:14px"></div>
-
-                        <div class="as-hint" id="asHint">
-                            👆 Click the <strong>polygon button</strong> in the top-right of the map, then click around your farm's outer boundary. Double-click to finish.
-                        </div>
-                    </div>
-
+                    <div class="as-panel" id="asControlPanel"></div>
                     <div class="as-map-wrap">
                         <div id="asMap"></div>
                     </div>
                 </div>
             </div>
-            <div class="mf">
-                <button class="btn-ghost" onclick="closeAutoSplit()">Cancel</button>
-                <span id="asCampCount" style="font-size:12px;color:var(--muted);flex:1;text-align:center"></span>
-                <button class="btn-primary" id="asSaveBtn" onclick="saveAutoSplitCamps()" disabled>Create camps</button>
-            </div>
+            <div class="mf"><button class="btn-ghost" onclick="closeAutoSplit()">Cancel</button><button class="btn-primary" id="asSaveBtn" onclick="asSave()">Save camps</button></div>
         </div>
     </div>
 
@@ -237,7 +188,7 @@
                     <div class="fg"><label>Type</label><select id="inType"><option value="pasture">🌿 Pasture</option><option value="hay">🌾 Hay</option><option value="crop">🌽 Crop</option><option value="other">Other</option></select></div>
                     <div class="fg"><label>Rest target (days)</label><input type="number" id="inRest" value="42" min="1" max="365"></div>
                 </div>
-                <div class="fg"><label>Max AU/ha <span class="opt">optional</span></label><input type="number" id="inMaxAU" placeholder="e.g. 2.5" step="0.1"></div>
+                <div class="fg"><label>Max AU/ha</label><input type="number" id="inMaxAU" placeholder="e.g. 2.5" step="0.1"></div>
             </div>
             <div class="mf"><button class="btn-ghost" onclick="cancelDraw()">Cancel</button><button class="btn-primary" onclick="saveNewField()">Save field</button></div>
         </div>
@@ -247,14 +198,13 @@
         <div class="modal msm">
             <div class="mh">
                 <div class="mh-title">✎ Edit field</div><button class="mh-close" onclick="closeModal('modalEditField')">✕</button></div>
-            <div class="mb">
-                <input type="hidden" id="editFieldId">
+            <div class="mb"><input type="hidden" id="editFieldId">
                 <div class="fg"><label>Field name</label><input type="text" id="editName" maxlength="40"></div>
                 <div class="frow">
                     <div class="fg"><label>Type</label><select id="editType"><option value="pasture">Pasture</option><option value="hay">Hay</option><option value="crop">Crop</option><option value="other">Other</option></select></div>
                     <div class="fg"><label>Rest target (days)</label><input type="number" id="editRest" min="1" max="365"></div>
                 </div>
-                <div class="fg"><label>Max AU/ha <span class="opt">optional</span></label><input type="number" id="editMaxAU" step="0.1" placeholder="Leave blank to disable"></div>
+                <div class="fg"><label>Max AU/ha</label><input type="number" id="editMaxAU" step="0.1"></div>
                 <div class="fg"><label>Colour</label>
                     <div class="color-swatches" id="editColorPicker"></div>
                 </div>
@@ -269,32 +219,19 @@
                 <div class="mh-title">🐄 Log Grazing Event</div><button class="mh-close" onclick="closeModal('modalGrazing')">✕</button></div>
             <div class="mb">
                 <div class="fg"><label>Field</label><select id="gField"></select></div>
-
-                <div id="gGroupPicker" style="margin:10px 0 4px"></div>
-
-                <div id="gManualInputs" class="gm-always">
+                <div id="gGroupPicker" style="margin:10px 0;"></div>
+                <div id="gManualInputs" style="display:none;">
                     <div class="frow">
-                        <div class="fg">
-                            <label>Animal type</label>
-                            <select id="gAnimalType">
-                            <option value="cattle">🐄 Cattle</option>
-                            <option value="sheep">🐑 Sheep</option>
-                            <option value="goats">🐐 Goats</option>
-                            <option value="horses">🐎 Horses</option>
-                            <option value="pigs">🐷 Pigs</option>
-                            <option value="mixed">🐾 Mixed</option>
-                        </select>
-                        </div>
-                        <div class="fg"><label>Number of animals</label><input type="number" id="gCount" placeholder="e.g. 60" min="1"></div>
+                        <div class="fg"><label>Animal type</label><select id="gAnimalType"><option value="cattle">🐄 Cattle</option><option value="sheep">🐑 Sheep</option><option value="goats">🐐 Goats</option><option value="horses">🐎 Horses</option><option value="pigs">🐷 Pigs</option><option value="mixed">🐾 Mixed</option></select></div>
+                        <div class="fg"><label>Number</label><input type="number" id="gCount" min="1"></div>
                     </div>
-                    <div class="fg"><label>Herd name <span class="opt">optional</span></label><input type="text" id="gHerd" placeholder="e.g. Main herd"></div>
+                    <div class="fg"><label>Herd name</label><input type="text" id="gHerd"></div>
                 </div>
-
-                <div class="frow" style="margin-top:8px">
+                <div class="frow">
                     <div class="fg"><label>Start date</label><input type="date" id="gStart"></div>
                     <div class="fg"><label>End date</label><input type="date" id="gEnd"></div>
                 </div>
-                <div class="fg"><label>Notes <span class="opt">optional</span></label><textarea id="gNotes" rows="2" placeholder="e.g. Moved due to rain..."></textarea></div>
+                <div class="fg"><label>Notes</label><textarea id="gNotes" rows="2"></textarea></div>
                 <div id="stockingWarning" class="warn-box" style="display:none"></div>
             </div>
             <div class="mf"><button class="btn-ghost" onclick="closeModal('modalGrazing')">Cancel</button><button class="btn-primary" onclick="saveGrazingEvent()">Save event</button></div>
@@ -304,15 +241,14 @@
     <div class="overlay" id="modalGroup" style="display:none">
         <div class="modal msm">
             <div class="mh">
-                <div class="mh-title" id="groupModalTitle">🐄 Add animal group</div><button class="mh-close" onclick="closeModal('modalGroup')">✕</button></div>
-            <div class="mb">
-                <input type="hidden" id="groupEditId">
-                <div class="fg"><label>Group name <span class="opt">required</span></label><input type="text" id="groupName" placeholder="e.g. Main Herd" maxlength="40"></div>
+                <div class="mh-title">🐄 Add animal group</div><button class="mh-close" onclick="closeModal('modalGroup')">✕</button></div>
+            <div class="mb"><input type="hidden" id="groupEditId">
+                <div class="fg"><label>Group name</label><input type="text" id="groupName" maxlength="40"></div>
                 <div class="frow">
                     <div class="fg"><label>Animal type</label><select id="groupType"><option value="cattle">🐄 Cattle</option><option value="sheep">🐑 Sheep</option><option value="goats">🐐 Goats</option><option value="horses">🐎 Horses</option><option value="pigs">🐷 Pigs</option><option value="mixed">🐾 Mixed</option></select></div>
-                    <div class="fg"><label>Number of animals</label><input type="number" id="groupCount" placeholder="e.g. 60" min="1"></div>
+                    <div class="fg"><label>Number</label><input type="number" id="groupCount" min="1"></div>
                 </div>
-                <div class="fg"><label>Herd name <span class="opt">optional</span></label><input type="text" id="groupHerd" placeholder="e.g. South Herd" maxlength="40"></div>
+                <div class="fg"><label>Herd name</label><input type="text" id="groupHerd" maxlength="40"></div>
             </div>
             <div class="mf"><button class="btn-ghost" onclick="closeModal('modalGroup')">Cancel</button><button class="btn-primary" onclick="saveGroup()">Save group</button></div>
         </div>
@@ -321,7 +257,7 @@
     <div class="overlay" id="modalHistory" style="display:none">
         <div class="modal mlg">
             <div class="mh">
-                <div class="mh-title" id="historyTitle">📋 Grazing History</div><button class="mh-close" onclick="closeModal('modalHistory')">✕</button></div>
+                <div class="mh-title">📋 Grazing History</div><button class="mh-close" onclick="closeModal('modalHistory')">✕</button></div>
             <div class="mb" id="historyBody"></div>
             <div class="mf"><button class="btn-ghost" onclick="closeModal('modalHistory')">Close</button><button class="btn-primary" onclick="historyAddEvent()">+ Add Event</button></div>
         </div>
@@ -331,12 +267,7 @@
         <div class="modal msm">
             <div class="mh">
                 <div class="mh-title">⬇️ Export &amp; Backup</div><button class="mh-close" onclick="closeModal('modalExport')">✕</button></div>
-            <div class="mb">
-                <p style="font-size:12px;color:var(--muted);margin-bottom:12px">All data stays on your device. Export to back up or share.</p>
-                <button class="exp-row" onclick="exportJSON()">💾 JSON backup (full restore)</button>
-                <button class="exp-row" onclick="exportGeoJSON()">🗺️ GeoJSON fields</button>
-                <button class="exp-row" onclick="exportCSV()">📊 Events CSV</button>
-                <label class="exp-row">⬆️ Import JSON backup<input type="file" accept=".json" onchange="importJSON(event)" style="display:none"></label>
+            <div class="mb"><button class="exp-row" onclick="exportJSON()">💾 JSON backup</button><button class="exp-row" onclick="exportGeoJSON()">🗺️ GeoJSON fields</button><button class="exp-row" onclick="exportCSV()">📊 Events CSV</button><label class="exp-row">⬆️ Import JSON<input type="file" accept=".json" onchange="importJSON(event)" style="display:none"></label>
                 <button class="danger-btn" onclick="clearAllData()">⚠️ Clear all data</button>
             </div>
             <div class="mf"><button class="btn-ghost" onclick="closeModal('modalExport')">Close</button></div>
@@ -348,16 +279,7 @@
             <div class="mh">
                 <div class="mh-title">🌾 About GrazingTrack</div><button class="mh-close" onclick="closeModal('modalAbout')">✕</button></div>
             <div class="mb">
-                <p style="color:var(--muted);margin-bottom:12px">Free open source rotational grazing management. All data stays on your device — no cloud, no accounts.</p>
-                <div class="about-list">
-                    <div class="al">✅ Draw fields manually or auto-split from farm boundary</div>
-                    <div class="al">✅ Animal groups — one tap to log any herd</div>
-                    <div class="al">✅ Gradual field colour saturation during rest</div>
-                    <div class="al">✅ Rotation planner with readiness progress bars</div>
-                    <div class="al">✅ 🛰 NDVI satellite overlay — real grass health via NASA MODIS</div>
-                    <div class="al">✅ PDF farm report + GeoJSON / CSV export</div>
-                    <div class="al">✅ MIT licence — free forever</div>
-                </div>
+                <p>Free open source rotational grazing management. All data stays on your device.</p>
             </div>
             <div class="mf"><button class="btn-primary" onclick="closeModal('modalAbout')">Close</button></div>
         </div>
@@ -373,31 +295,94 @@
             </div>
             <div class="setup-title" id="setupTitle">Welcome</div>
             <div class="setup-body" id="setupBody"></div>
-            <div class="setup-nav">
-                <button class="btn-ghost" id="setupBack" onclick="setupBack()" style="display:none">← Back</button>
-                <button class="setup-skip" onclick="closeSetup(false)">Skip</button>
-                <button class="btn-primary" id="setupNext" onclick="setupNext()">Next →</button>
+            <div class="setup-nav"><button class="btn-ghost" id="setupBack" onclick="setupBack()" style="display:none">← Back</button><button class="setup-skip" onclick="closeSetup(false)">Skip</button><button class="btn-primary" id="setupNext" onclick="setupNext()">Next →</button></div>
+        </div>
+    </div>
+
+    <div class="overlay" id="modalOffline" style="display:none">
+        <div class="modal msm">
+            <div class="mh">
+                <div class="mh-title">📥 Offline Map Tiles</div>
+                <button class="mh-close" onclick="closeModal('modalOffline')">✕</button>
             </div>
+            <div class="mb" id="offlineBody"></div>
+            <div class="mf"><button class="btn-ghost" onclick="closeModal('modalOffline')">Close</button></div>
         </div>
     </div>
 
     <div class="install-banner" id="installBanner" onclick="installApp()">📲 Install GrazingTrack</div>
 
-    <!-- External Libraries -->
-    <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
-    <script src="https://unpkg.com/leaflet-draw@1.0.4/dist/leaflet.draw.js"></script>
-    <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
-
-    <!-- GrazingTrack Modular App Files -->
     <script src="gt-utils.js"></script>
     <script src="gt-data.js"></script>
-    <script src="gt-split.js"></script>
+    <script src="gt-offline.js"></script>
     <script src="gt-events.js"></script>
+    <script src="gt-split.js"></script>
+    <script src="gt-map.js"></script>
     <script src="gt-dashboard.js"></script>
+    <script src="gt-analytics.js"></script>
     <script src="setup.js"></script>
 
-    <!-- Entry Point (Must be last) -->
-    <script src="gt-map.js"></script>
+    <script>
+        document.addEventListener('DOMContentLoaded', function() {
+            setTimeout(function() {
+                // Initialize the map module
+                if (typeof initMap === 'function') initMap();
+
+                // Load farm configuration
+                try {
+                    let cfg = JSON.parse(localStorage.getItem('gt_config') || '{}');
+                    if (cfg.farmName) document.getElementById('farmNameDisplay').textContent = cfg.farmName;
+                } catch (e) {}
+
+                // Hide sidebar if needed
+                try {
+                    if (localStorage.getItem('gt_sb_hidden') === '1' && window.innerWidth > 900) {
+                        document.getElementById('sidebar').classList.add('sb-hidden');
+                        let expBtn = document.getElementById('sbExpandBtn');
+                        if (expBtn) expBtn.style.display = 'flex';
+                    }
+                } catch (e) {}
+            }, 100);
+
+            // Check if setup is needed
+            if (typeof checkFirstRun === 'function') checkFirstRun();
+        });
+
+        // Navigation Handlers
+        window.switchTab = function(name) {
+            document.querySelectorAll('.tab').forEach(b => b.classList.toggle('active', b.id === 'tab-' + name));
+            document.querySelectorAll('.tab-panel').forEach(p => p.classList.toggle('active', p.id === 'panel-' + name));
+            if (name === 'map') setTimeout(() => {
+                if (typeof map !== 'undefined' && map) map.invalidateSize();
+            }, 50);
+            if (name === 'dashboard' && typeof renderDashboard === 'function') renderDashboard();
+            if (name === 'rotation' && typeof renderRotation === 'function') renderRotation();
+            if (name === 'reports' && typeof renderReports === 'function') renderReports();
+            if (name === 'analytics' && typeof renderAnalytics === 'function') renderAnalytics();
+        };
+
+        window.toggleSidebar = function() {
+            let sb = document.getElementById('sidebar'),
+                btn = document.getElementById('sbExpandBtn');
+            if (window.innerWidth > 900) {
+                let hidden = sb.classList.toggle('sb-hidden');
+                if (btn) btn.style.display = hidden ? 'flex' : 'none';
+                setTimeout(() => {
+                    if (typeof map !== 'undefined' && map) map.invalidateSize();
+                }, 320);
+                try {
+                    localStorage.setItem('gt_sb_hidden', hidden ? '1' : '0');
+                } catch (e) {}
+            } else {
+                sb.classList.toggle('open');
+            }
+        };
+
+        window.closeSidebar = function() {
+            let sb = document.getElementById('sidebar');
+            if (sb) sb.classList.remove('open');
+        };
+    </script>
 </body>
 
 </html>

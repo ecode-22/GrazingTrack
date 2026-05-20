@@ -27,23 +27,18 @@ function cap(s) { return s.charAt(0).toUpperCase() + s.slice(1); }
 function calcAreaHa(geometry) {
     if (!geometry) return 0;
     if (geometry.type === 'MultiPolygon') {
-        return geometry.coordinates.reduce(
-            (sum, ring) => sum + calcAreaHa({ type: 'Polygon', coordinates: ring }), 0
-        );
+        return geometry.coordinates.reduce((sum, ring) => sum + calcAreaHa({ type: 'Polygon', coordinates: ring }), 0);
     }
     if (geometry.type !== 'Polygon') return 0;
-    const coords = geometry.coordinates[0],
-        R = 6371000;
+    const coords = geometry.coordinates[0];
+    const R = 6378137; // Updated to standard WGS84 Earth radius
     let area = 0;
     for (let i = 0; i < coords.length - 1; i++) {
-        const [lng1, lat1] = coords[i], [lng2, lat2] = coords[i + 1];
-        const x1 = lng1 * Math.PI / 180 * R * Math.cos(lat1 * Math.PI / 180),
-            y1 = lat1 * Math.PI / 180 * R;
-        const x2 = lng2 * Math.PI / 180 * R * Math.cos(lat2 * Math.PI / 180),
-            y2 = lat2 * Math.PI / 180 * R;
-        area += x1 * y2 - x2 * y1;
+        const p1 = coords[i],
+            p2 = coords[i + 1];
+        area += (p2[0] - p1[0]) * (2 + Math.sin(p1[1] * Math.PI / 180) + Math.sin(p2[1] * Math.PI / 180));
     }
-    return Math.abs(area / 2) / 10000;
+    return Math.abs(area * R * R / 2 / 1000000) * 0.00017453292519943295; // Result in Hectares
 }
 
 function download(filename, content, type) {

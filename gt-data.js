@@ -21,8 +21,11 @@ function save(k, v) {
 
 const loadFields = () => load('gt_fields');
 const loadEvents = () => load('gt_events');
+const loadProduction = () => load('gt_production'); // NEW: Milk Production Storage
+
 const saveFields = f => save('gt_fields', f);
 const saveEvents = e => save('gt_events', e);
+const saveProduction = p => save('gt_production', p); // NEW: Milk Production Storage
 
 function loadGroups() {
     const direct = load('gt_groups');
@@ -62,7 +65,8 @@ function uid_group(i) {
 
 function getStorageUsage() {
     let t = 0;
-    ['gt_fields', 'gt_events', 'gt_groups'].forEach(k => {
+    // UPDATED to include gt_production
+    ['gt_fields', 'gt_events', 'gt_groups', 'gt_production'].forEach(k => {
         const v = localStorage.getItem(k);
         if (v) t += v.length * 2;
     });
