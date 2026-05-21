@@ -1,5 +1,5 @@
 // ============================================================
-// gt-map.js — Map, field management, tools, NDVI
+// gt-map.js — Map, field management, tools, NDVI, and Heatmap
 // ============================================================
 'use strict';
 
@@ -12,6 +12,9 @@ let vertexCount = 0;
 // NDVI globals
 let ndviLayer = null;
 let ndviActive = false;
+
+// Heatmap globals
+let heatmapActive = false;
 
 function _ndviRecentDate() {
     const d = new Date();
@@ -29,6 +32,8 @@ function toggleNDVIPanel() {
     if (btn) btn.classList.toggle('active', ndviActive);
 
     if (ndviActive) {
+        if (heatmapActive) togglePressureHeatmap(); // Disable heatmap if active
+
         const dateInput = document.getElementById('ndviDate');
         if (dateInput && !dateInput.value) {
             dateInput.value = _ndviRecentDate();
@@ -75,13 +80,18 @@ function initMap() {
 
     const sat = L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}', { attribution: 'Tiles © Esri', maxZoom: 19 });
     const osm = L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png', { attribution: '© OpenStreetMap', maxZoom: 19 });
+    const topo = L.tileLayer('https://{s}.tile.opentopomap.org/{z}/{x}/{y}.png', {
+        maxZoom: 17,
+        attribution: 'Map data: © OpenStreetMap contributors, SRTM | Map style: © OpenTopoMap'
+    });
+
     const hyb = L.layerGroup([
         sat,
         L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/Reference/World_Boundaries_and_Places/MapServer/tile/{z}/{y}/{x}', { maxZoom: 19, opacity: 0.8 })
     ]);
 
     sat.addTo(map);
-    L.control.layers({ 'Satellite': sat, 'Satellite + Labels': hyb, 'Street map': osm }, {}, { position: 'topright' }).addTo(map);
+    L.control.layers({ 'Satellite': sat, 'Satellite + Labels': hyb, 'Street map': osm, '⛰️ Topography': topo }, {}, { position: 'topright' }).addTo(map);
     L.control.zoom({ position: 'topright' }).addTo(map);
 
     drawnItems = new L.FeatureGroup().addTo(map);
@@ -116,9 +126,12 @@ function initMap() {
         vertexCount = pts.length;
         updateUndoBtn();
         if (pts.length >= 3) {
-            const geo = { type: 'Polygon', coordinates: [
+            const geo = {
+                type: 'Polygon',
+                coordinates: [
                     [...pts, pts[0]].map(p => [p.lng, p.lat])
-                ] };
+                ]
+            };
             setStatus(`Drawing — ${pts.length} points · ~${calcAreaHa(geo).toFixed(1)} ha · double-click to finish`);
         } else {
             setStatus(`Drawing — ${pts.length} point${pts.length !== 1 ? 's' : ''} placed · need at least 3`);
@@ -609,4 +622,80 @@ function loadFarmConfig() {
 function checkFirstRun() {
     const done = localStorage.getItem('gt_setup_done');
     if (!done && typeof openSetup === 'function') openSetup();
+}
+
+// ── HEATMAP OVERLAY LOGIC ──────────────────────────────────────
+
+function togglePressureHeatmap() {
+    heatmapActive = !heatmapActive;
+    const btn = document.getElementById('btnHeatmap');
+    if (btn) btn.classList.toggle('active', heatmapActive);
+
+    if (heatmapActive) {
+        // Disable NDVI if active
+        if (typeof ndviActive !== 'undefined' && ndviActive) toggleNDVIPanel();
+        applyPressureHeatmap();
+        setStatus('🔥 Grazing Pressure Heatmap active (Past 12 months)');
+    } else {
+        refreshMapColors();
+        setStatus('Ready');
+    }
+}
+
+function applyPressureHeatmap() {
+    const fields = loadFields();
+    const events = loadEvents();
+
+    // Calculate cutoff date for the past year
+    const oneYearAgo = new Date();
+    oneYearAgo.setFullYear(oneYearAgo.getFullYear() - 1);
+    const oneYearAgoStr = oneYearAgo.toISOString().slice(0, 10);
+
+    let maxPressure = 0.0001; // Avoid division by zero
+    const fieldPressures = {};
+
+    // 1. Calculate pressure per hectare for each field
+    fields.forEach(f => {
+        const fEvents = events.filter(e => e.fieldId === f.id && e.endDate >= oneYearAgoStr);
+        let totalAnimalDays = 0;
+
+        fEvents.forEach(e => {
+            // Only count grazing days within the last 365 days
+            const start = e.startDate < oneYearAgoStr ? oneYearAgoStr : e.startDate;
+            totalAnimalDays += (e.animalCount * daysBetween(start, e.endDate));
+        });
+
+        const density = f.areaHa > 0 ? (totalAnimalDays / f.areaHa) : 0;
+        fieldPressures[f.id] = density;
+
+        if (density > maxPressure) maxPressure = density;
+    });
+
+    // 2. Apply a Green -> Yellow -> Red gradient based on relative pressure
+    if (drawnItems) {
+        drawnItems.eachLayer(layer => {
+            if (layer.options && layer.options.fieldId) {
+                const density = fieldPressures[layer.options.fieldId] || 0;
+                const ratio = density / maxPressure; // Normalizes from 0.0 to 1.0
+
+                // Color calculation (0 = Green, 0.5 = Yellow, 1.0 = Red)
+                const r = ratio < 0.5 ? Math.round(255 * (ratio * 2)) : 255;
+                const g = ratio > 0.5 ? Math.round(255 * (1 - (ratio - 0.5) * 2)) : 255;
+                const color = `rgb(${r}, ${g}, 0)`;
+
+                layer.setStyle({
+                    fillColor: color,
+                    fillOpacity: 0.8,
+                    color: '#ffffff', // White borders to make them stand out
+                    weight: 2
+                });
+
+                // Update tooltip to show density
+                const tt = layer.getTooltip();
+                if (tt) {
+                    layer.bindTooltip(`<strong>${tt.getContent().split('<br>')[0].replace(/<[^>]+>/g, '')}</strong><br>${density.toFixed(0)} Animal-Days/ha`, { permanent: false });
+                }
+            }
+        });
+    }
 }

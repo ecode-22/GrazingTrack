@@ -44,6 +44,11 @@
             <button class="btn-grazing" onclick="openGrazingModal(null)">🐄 Log Grazing Event</button>
 
             <button class="ndvi-toggle-btn" id="btnNDVI" onclick="toggleNDVIPanel()">🛰️ Vegetation Heatmap (NDVI)</button>
+
+            <button class="ndvi-toggle-btn" id="btnHeatmap" onclick="togglePressureHeatmap()" style="border-color: #d97706; color: #b45309; margin-top: 8px;">
+                🔥 Historical Grazing Pressure
+            </button>
+
             <div class="ndvi-panel" id="ndviPanel" style="display:none; margin-top:10px; padding:10px; border:1px solid #ddd; border-radius:8px; background:#fff;">
                 <div style="height:10px; border-radius:5px; margin-bottom:4px; background:linear-gradient(to right, #7c2d12, #ca8a04, #4ade80, #14532d);"></div>
                 <div style="display:flex; justify-content:space-between; font-size:9px; color:#6b7280; margin-bottom:10px;">
@@ -158,7 +163,6 @@
         </div>
     </main>
 
-    <!-- MODALS -->
     <div class="overlay" id="modalAutoSplit" style="display:none">
         <div class="modal mxl">
             <div class="mh">
@@ -213,36 +217,34 @@
                 <div id="gManualInputs" style="display:none;">
                     <div class="frow">
                         <div class="fg"><label>Animal type</label><select id="gAnimalType"><option value="cattle">🐄 Cattle</option><option value="sheep">🐑 Sheep</option><option value="goats">🐐 Goats</option><option value="horses">🐎 Horses</option><option value="pigs">🐷 Pigs</option><option value="mixed">🐾 Mixed</option></select></div>
-                        <div
-                            class="fg"><label>Number</label><input type="number" id="gCount" min="1"></div>
+                        <div class="fg"><label>Number</label><input type="number" id="gCount" min="1"></div>
+                    </div>
+                    <div class="fg"><label>Herd name</label><input type="text" id="gHerd"></div>
                 </div>
-                <div class="fg"><label>Herd name</label><input type="text" id="gHerd"></div>
+                <div class="frow">
+                    <div class="fg"><label>Start date</label><input type="date" id="gStart"></div>
+                    <div class="fg"><label>End date</label><input type="date" id="gEnd"></div>
+                </div>
+                <div class="fg"><label>Notes</label><textarea id="gNotes" rows="2"></textarea></div>
+                <div id="stockingWarning" class="warn-box" style="display:none"></div>
             </div>
-            <div class="frow">
-                <div class="fg"><label>Start date</label><input type="date" id="gStart"></div>
-                <div class="fg"><label>End date</label><input type="date" id="gEnd"></div>
-            </div>
-            <div class="fg"><label>Notes</label><textarea id="gNotes" rows="2"></textarea></div>
-            <div id="stockingWarning" class="warn-box" style="display:none"></div>
+            <div class="mf"><button class="btn-ghost" onclick="closeModal('modalGrazing')">Cancel</button><button class="btn-primary" onclick="saveGrazingEvent()">Save event</button></div>
         </div>
-        <div class="mf"><button class="btn-ghost" onclick="closeModal('modalGrazing')">Cancel</button><button class="btn-primary" onclick="saveGrazingEvent()">Save event</button></div>
-    </div>
     </div>
     <div class="overlay" id="modalGroup" style="display:none">
         <div class="modal msm">
             <div class="mh">
-                <div class="mh-title">🐄 Add animal group</div><button class="mh-close" onclick="closeModal('modalGroup')">✕</button></div>
+                <div class="mh-title" id="groupModalTitle">🐄 Add animal group</div><button class="mh-close" onclick="closeModal('modalGroup')">✕</button></div>
             <div class="mb"><input type="hidden" id="groupEditId">
                 <div class="fg"><label>Group name</label><input type="text" id="groupName" maxlength="40"></div>
                 <div class="frow">
                     <div class="fg"><label>Animal type</label><select id="groupType"><option value="cattle">🐄 Cattle</option><option value="sheep">🐑 Sheep</option><option value="goats">🐐 Goats</option><option value="horses">🐎 Horses</option><option value="pigs">🐷 Pigs</option><option value="mixed">🐾 Mixed</option></select></div>
-                    <div
-                        class="fg"><label>Number</label><input type="number" id="groupCount" min="1"></div>
+                    <div class="fg"><label>Number</label><input type="number" id="groupCount" min="1"></div>
+                </div>
+                <div class="fg"><label>Herd name</label><input type="text" id="groupHerd" maxlength="40"></div>
             </div>
-            <div class="fg"><label>Herd name</label><input type="text" id="groupHerd" maxlength="40"></div>
+            <div class="mf"><button class="btn-ghost" onclick="closeModal('modalGroup')">Cancel</button><button class="btn-primary" onclick="saveGroup()">Save group</button></div>
         </div>
-        <div class="mf"><button class="btn-ghost" onclick="closeModal('modalGroup')">Cancel</button><button class="btn-primary" onclick="saveGroup()">Save group</button></div>
-    </div>
     </div>
     <div class="overlay" id="modalHistory" style="display:none">
         <div class="modal mlg">
@@ -257,8 +259,7 @@
             <div class="mh">
                 <div class="mh-title">⬇️ Export &amp; Backup</div><button class="mh-close" onclick="closeModal('modalExport')">✕</button></div>
             <div class="mb"><button class="exp-row" onclick="exportJSON()">💾 JSON backup</button><button class="exp-row" onclick="exportGeoJSON()">🗺️ GeoJSON fields</button><button class="exp-row" onclick="exportCSV()">📊 Events CSV</button><label class="exp-row">⬆️ Import JSON<input type="file" accept=".json" onchange="importJSON(event)" style="display:none"></label>
-                <button
-                    class="danger-btn" onclick="clearAllData()">⚠️ Clear all data</button>
+                <button class="danger-btn" onclick="clearAllData()">⚠️ Clear all data</button>
             </div>
             <div class="mf"><button class="btn-ghost" onclick="closeModal('modalExport')">Close</button></div>
         </div>
@@ -435,8 +436,10 @@
             selectedFieldId = null,
             currentTool = 'select',
             vertexCount = 0;
+
         let ndviLayer = null,
             ndviActive = false;
+        let heatmapActive = false; // <-- ADDED: Heatmap toggle state
 
         function _ndviRecentDate() {
             const d = new Date();
@@ -452,6 +455,8 @@
             panel.style.display = ndviActive ? 'block' : 'none';
             if (btn) btn.classList.toggle('active', ndviActive);
             if (ndviActive) {
+                if (heatmapActive) togglePressureHeatmap(); // Disable heatmap if active
+
                 const dateInput = document.getElementById('ndviDate');
                 if (dateInput && !dateInput.value) dateInput.value = _ndviRecentDate();
                 applyNDVI();
@@ -480,6 +485,71 @@
             ndviLayer.on('tileerror', () => setStatus('⚠ NDVI tiles unavailable for this date.'));
         }
 
+        // ── ADDED: Heatmap Layer Functions ─────────────────────────
+        function togglePressureHeatmap() {
+            heatmapActive = !heatmapActive;
+            const btn = document.getElementById('btnHeatmap');
+            if (btn) btn.classList.toggle('active', heatmapActive);
+
+            if (heatmapActive) {
+                if (typeof ndviActive !== 'undefined' && ndviActive) toggleNDVIPanel();
+                applyPressureHeatmap();
+                setStatus('🔥 Grazing Pressure Heatmap active (Past 12 months)');
+            } else {
+                refreshMapColors();
+                setStatus('Ready');
+            }
+        }
+
+        function applyPressureHeatmap() {
+            const fields = loadFields();
+            const events = loadEvents();
+            const oneYearAgo = new Date();
+            oneYearAgo.setFullYear(oneYearAgo.getFullYear() - 1);
+            const oneYearAgoStr = oneYearAgo.toISOString().slice(0, 10);
+
+            let maxPressure = 0.0001;
+            const fieldPressures = {};
+
+            fields.forEach(f => {
+                const fEvents = events.filter(e => e.fieldId === f.id && e.endDate >= oneYearAgoStr);
+                let totalAnimalDays = 0;
+                fEvents.forEach(e => {
+                    const start = e.startDate < oneYearAgoStr ? oneYearAgoStr : e.startDate;
+                    totalAnimalDays += (e.animalCount * daysBetween(start, e.endDate));
+                });
+                const density = f.areaHa > 0 ? (totalAnimalDays / f.areaHa) : 0;
+                fieldPressures[f.id] = density;
+                if (density > maxPressure) maxPressure = density;
+            });
+
+            if (drawnItems) {
+                drawnItems.eachLayer(layer => {
+                    if (layer.options && layer.options.fieldId) {
+                        const density = fieldPressures[layer.options.fieldId] || 0;
+                        const ratio = density / maxPressure;
+                        const r = ratio < 0.5 ? Math.round(255 * (ratio * 2)) : 255;
+                        const g = ratio > 0.5 ? Math.round(255 * (1 - (ratio - 0.5) * 2)) : 255;
+                        const color = `rgb(${r}, ${g}, 0)`;
+
+                        layer.setStyle({
+                            fillColor: color,
+                            fillOpacity: 0.8,
+                            color: '#ffffff',
+                            weight: 2
+                        });
+
+                        const tt = layer.getTooltip();
+                        if (tt) {
+                            layer.bindTooltip(`<strong>${tt.getContent().split('<br>')[0].replace(/<[^>]+>/g, '')}</strong><br>${density.toFixed(0)} Animal-Days/ha`, {
+                                permanent: false
+                            });
+                        }
+                    }
+                });
+            }
+        }
+
         function setStatus(msg) {
             let el = document.getElementById('statusMsg');
             if (el) el.textContent = msg;
@@ -497,10 +567,17 @@
                 attribution: '© OpenStreetMap',
                 maxZoom: 19
             });
+            // NEW: Topography layer added
+            const topo = L.tileLayer('https://{s}.tile.opentopomap.org/{z}/{x}/{y}.png', {
+                maxZoom: 17,
+                attribution: 'Map data: © OpenStreetMap contributors, SRTM | Map style: © OpenTopoMap'
+            });
+
             sat.addTo(map);
             L.control.layers({
                 '🛰 Satellite': sat,
-                '🗺 Street map': osm
+                '🗺 Street map': osm,
+                '⛰️ Topography': topo
             }, {}, {
                 position: 'topright'
             }).addTo(map);
@@ -1399,7 +1476,6 @@
             
             let html = `
                 <div class="analytics-grid" style="display:grid; grid-template-columns:repeat(auto-fit, minmax(380px, 1fr)); gap:20px; margin-top:20px;">
-                    <!-- Summary Cards -->
                     <div class="analytics-card">
                         <div class="analytics-card-title">📊 Farm Overview</div>
                         <div style="display:grid; grid-template-columns:1fr 1fr; gap:12px;">
@@ -1422,7 +1498,6 @@
                         </div>
                     </div>
                     
-                    <!-- Status Distribution -->
                     <div class="analytics-card">
                         <div class="analytics-card-title">📈 Field Status Distribution</div>
                         <div style="margin-top:8px;">
@@ -1435,7 +1510,6 @@
                         </div>
                     </div>
                     
-                    <!-- Rest Compliance Score -->
                     <div class="analytics-card">
                         <div class="analytics-card-title">🌿 Rest Compliance Score</div>
                         <div style="text-align:center; padding:16px;">
@@ -1452,7 +1526,6 @@
                         </div>
                     </div>
                     
-                    <!-- Field Utilization Chart -->
                     <div class="analytics-card">
                         <div class="analytics-card-title">📊 Field Utilization Rate</div>
                         ${fieldUtilization.slice(0,6).map(f => `
@@ -1469,7 +1542,6 @@
                         <div style="margin-top:8px; font-size:10px; color:var(--muted); text-align:center;">Higher utilization = more grazing pressure</div>
                     </div>
                     
-                    <!-- Monthly Grazing Trend -->
                     <div class="analytics-card">
                         <div class="analytics-card-title">📅 Monthly Grazing Trend (Last 6 Months)</div>
                         <div style="margin-top:12px;">
@@ -1488,7 +1560,6 @@
                         </div>
                     </div>
                     
-                    <!-- Animal Groups Summary -->
                     <div class="analytics-card">
                         <div class="analytics-card-title">🐄 Animal Groups Summary</div>
                         ${groups.length ? groups.map(g => `
@@ -1503,7 +1574,6 @@
                         <button class="btn-primary" style="width:100%; margin-top:12px; padding:8px;" onclick="openGroupModal(null)">+ Add Animal Group</button>
                     </div>
                     
-                    <!-- Grazing Efficiency -->
                     <div class="analytics-card">
                         <div class="analytics-card-title">⚡ Grazing Efficiency Metrics</div>
                         <div style="padding:8px 0;">
