@@ -2494,6 +2494,347 @@ body {
     text-align: right;
 }
 
+
+/* Additional Auto-Split Styles */
+.as-section {
+    margin-bottom: 20px;
+}
+
+.as-section-title {
+    font-size: 13px;
+    font-weight: 700;
+    color: var(--text);
+    margin-bottom: 10px;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+}
+
+.as-section-hint {
+    font-size: 11px;
+    font-weight: 400;
+    color: var(--text-secondary);
+}
+
+.as-count-row {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    margin-bottom: 10px;
+}
+
+.as-count-btn {
+    width: 32px;
+    height: 32px;
+    border: 1.5px solid var(--border);
+    background: var(--bg-card);
+    border-radius: 50%;
+    cursor: pointer;
+    font-size: 16px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    transition: var(--transition);
+    color: var(--text);
+}
+
+.as-count-btn:hover {
+    border-color: var(--grn);
+    color: var(--grn);
+    background: var(--grn-pale);
+}
+
+.as-count-num {
+    min-width: 30px;
+    text-align: center;
+    font-size: 24px;
+    font-weight: 800;
+}
+
+.as-slider {
+    flex: 1;
+    accent-color: var(--grn);
+    height: 6px;
+    cursor: pointer;
+}
+
+.as-dir-row {
+    display: flex;
+    gap: 8px;
+    margin-bottom: 10px;
+}
+
+.as-dir-btn {
+    flex: 1;
+    padding: 8px;
+    border: 1.5px solid var(--border);
+    background: var(--bg-card);
+    border-radius: var(--radius);
+    font-size: 11px;
+    font-weight: 700;
+    cursor: pointer;
+    transition: var(--transition);
+    color: var(--text-secondary);
+}
+
+.as-dir-btn:hover {
+    border-color: var(--grn);
+}
+
+.as-dir-btn.active {
+    border-color: var(--grn);
+    background: var(--grn-pale);
+    color: var(--grn-dark);
+}
+
+.as-redraw-btn {
+    width: 100%;
+    padding: 8px 12px;
+    border: 1px solid var(--border);
+    background: var(--bg-card);
+    border-radius: var(--radius);
+    font-size: 11px;
+    cursor: pointer;
+    color: var(--text-secondary);
+    transition: var(--transition);
+    margin-top: 8px;
+}
+
+.as-redraw-btn:hover {
+    background: var(--bg);
+    border-color: var(--text-secondary);
+}
+
+.as-div-legend {
+    font-size: 10px;
+    color: var(--text-secondary);
+    margin-bottom: 12px;
+    padding: 8px;
+    background: var(--bg-invert);
+    border-radius: var(--radius);
+}
+
+.as-div-block {
+    background: var(--bg-card);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    padding: 12px;
+    margin-bottom: 10px;
+}
+
+.as-div-header {
+    font-size: 11px;
+    font-weight: 700;
+    color: var(--text);
+    margin-bottom: 8px;
+}
+
+.as-div-row {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    margin-bottom: 6px;
+}
+
+.as-div-row:last-child {
+    margin-bottom: 0;
+}
+
+.as-div-lbl {
+    font-size: 10px;
+    font-weight: 600;
+    color: var(--text-secondary);
+    min-width: 45px;
+}
+
+.as-div-slider {
+    flex: 1;
+    accent-color: var(--grn);
+    height: 5px;
+    cursor: pointer;
+}
+
+.as-div-pct {
+    font-size: 10px;
+    font-weight: 700;
+    color: var(--grn);
+    min-width: 30px;
+    text-align: right;
+}
+
+.as-div-group-lbl {
+    font-size: 11px;
+    font-weight: 700;
+    color: var(--text-secondary);
+    margin-bottom: 8px;
+    margin-top: 12px;
+    padding-bottom: 4px;
+    border-bottom: 1px solid var(--border);
+}
+
+.as-no-dividers {
+    font-size: 12px;
+    padding: 12px;
+    text-align: center;
+    color: var(--text-muted);
+}
+
+.as-name-list {
+    background: var(--bg-card);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    overflow: hidden;
+}
+
+.as-name-row {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 10px 12px;
+    border-bottom: 1px solid var(--border);
+    background: var(--bg);
+}
+
+.as-name-row:last-child {
+    border-bottom: none;
+}
+
+.as-camp-dot {
+    width: 12px;
+    height: 12px;
+    border-radius: 50%;
+    flex-shrink: 0;
+}
+
+.as-name-input {
+    flex: 1;
+    padding: 6px 8px;
+    border: 1px solid var(--border);
+    background: var(--bg-card);
+    border-radius: var(--radius);
+    font-size: 11px;
+    color: var(--text);
+}
+
+.as-name-input:focus {
+    outline: none;
+    border-color: var(--grn);
+    background: var(--grn-pale);
+}
+
+.as-size-lbl {
+    font-size: 10px;
+    font-weight: 600;
+    color: var(--text-secondary);
+    min-width: 45px;
+    text-align: right;
+}
+
+.as-reshape-btn {
+    padding: 4px 8px;
+    border: 1px solid var(--border);
+    background: var(--bg-card);
+    border-radius: var(--radius);
+    font-size: 12px;
+    cursor: pointer;
+    color: var(--text-secondary);
+    transition: var(--transition);
+    flex-shrink: 0;
+}
+
+.as-reshape-btn:hover {
+    background: var(--grn-pale);
+    border-color: var(--grn);
+    color: var(--grn-dark);
+}
+
+.as-total-badge {
+    padding: 12px;
+    background: var(--grn-pale);
+    border: 1.5px solid var(--grn);
+    border-radius: var(--radius);
+    font-size: 12px;
+    font-weight: 700;
+    color: var(--grn-dark);
+    text-align: center;
+    margin-top: auto;
+}
+
+.as-welcome {
+    text-align: center;
+    padding: 20px;
+}
+
+.as-welcome-icon {
+    font-size: 48px;
+    margin-bottom: 12px;
+}
+
+.as-welcome-title {
+    font-size: 16px;
+    font-weight: 700;
+    color: var(--text);
+    margin-bottom: 8px;
+}
+
+.as-welcome-sub {
+    font-size: 12px;
+    color: var(--text-secondary);
+    line-height: 1.6;
+}
+
+.as-reshape-state {
+    text-align: center;
+}
+
+.as-reshape-icon {
+    width: 48px;
+    height: 48px;
+    border-radius: 50%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 24px;
+    margin: 0 auto 12px;
+    color: white;
+}
+
+.as-reshape-title {
+    font-size: 16px;
+    font-weight: 700;
+    color: var(--text);
+    margin-bottom: 8px;
+}
+
+.as-reshape-sub {
+    font-size: 12px;
+    color: var(--text-secondary);
+    line-height: 1.6;
+    margin-bottom: 16px;
+}
+
+.as-reshape-actions {
+    display: flex;
+    gap: 10px;
+    margin-bottom: 12px;
+}
+
+.as-reshape-actions button {
+    flex: 1;
+}
+
+.as-reshape-note {
+    font-size: 10px;
+    color: var(--text-secondary);
+    line-height: 1.5;
+    margin-top: 12px;
+}
+
+.as-mb {
+    max-height: 500px;
+    overflow-y: auto;
+}
+
 @media (max-width: 900px) {
     .as-layout {
         flex-direction: column;
