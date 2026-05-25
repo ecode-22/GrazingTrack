@@ -1,5 +1,5 @@
 // ============================================================
-// gt-map.js — Map, field management, tools, NDVI, Pressure
+// gt-map.js — Map, field management, tools, NDVI, and Heatmap
 // ============================================================
 'use strict';
 
@@ -9,9 +9,13 @@ let selectedFieldId = null;
 let currentTool = 'select';
 let vertexCount = 0;
 
+// NDVI globals
 let ndviLayer = null;
 let ndviActive = false;
 let pressureLayer = null; // NEW
+
+// Heatmap globals
+let heatmapActive = false;
 
 function _ndviRecentDate() {
     const d = new Date();
@@ -28,10 +32,9 @@ function toggleNDVIPanel() {
     panel.style.display = ndviActive ? 'block' : 'none';
     if (btn) btn.classList.toggle('active', ndviActive);
 
-    // Turn off pressure if NDVI goes on
-    if (ndviActive && pressureLayer) togglePressureHeatmap();
-
     if (ndviActive) {
+        if (heatmapActive) togglePressureHeatmap(); // Disable heatmap if active
+
         const dateInput = document.getElementById('ndviDate');
         if (dateInput && !dateInput.value) {
             dateInput.value = _ndviRecentDate();
@@ -70,46 +73,6 @@ function _removeNDVI() {
     }
     ndviLayer = null;
 }
-
-// NEW: Grazing Pressure Heatmap
-function togglePressureHeatmap() {
-    const btn = document.getElementById('btnPressure');
-
-    if (pressureLayer && map.hasLayer(pressureLayer)) {
-        map.removeLayer(pressureLayer);
-        pressureLayer = null;
-        if (btn) btn.classList.remove('active');
-        setStatus('Pressure heatmap deactivated');
-        return;
-    }
-
-    // Turn off NDVI if pressure goes on
-    if (ndviActive) toggleNDVIPanel();
-
-    if (btn) btn.classList.add('active');
-    const fields = loadFields();
-    const events = loadEvents();
-
-    pressureLayer = L.featureGroup().addTo(map);
-
-    fields.forEach(f => {
-        // Calculate total days grazed in this field
-        const fEvents = events.filter(e => e.fieldId === f.id);
-        const totalDays = fEvents.reduce((s, e) => s + daysBetween(e.startDate, e.endDate), 0);
-
-        // Calculate utilization % (assuming 365 days)
-        const utilization = Math.min(100, (totalDays / 365) * 100);
-
-        // Red for >70%, Orange for >30%, Green for less
-        const heatColor = utilization > 70 ? '#ef4444' : utilization > 30 ? '#f59e0b' : '#10b981';
-
-        L.geoJSON(f.geometry, {
-            style: { color: heatColor, fillColor: heatColor, fillOpacity: 0.65, weight: 1.5 }
-        }).addTo(pressureLayer);
-    });
-
-    setStatus('🔥 Grazing pressure heatmap active (Red = Heavily grazed)');
-}
 window.togglePressureHeatmap = togglePressureHeatmap;
 
 function initMap() {
@@ -119,13 +82,18 @@ function initMap() {
 
     const sat = L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}', { attribution: 'Tiles © Esri', maxZoom: 19 });
     const osm = L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png', { attribution: '© OpenStreetMap', maxZoom: 19 });
+    const topo = L.tileLayer('https://{s}.tile.opentopomap.org/{z}/{x}/{y}.png', {
+        maxZoom: 17,
+        attribution: 'Map data: © OpenStreetMap contributors, SRTM | Map style: © OpenTopoMap'
+    });
+
     const hyb = L.layerGroup([
         sat,
         L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/Reference/World_Boundaries_and_Places/MapServer/tile/{z}/{y}/{x}', { maxZoom: 19, opacity: 0.8 })
     ]);
 
     sat.addTo(map);
-    L.control.layers({ 'Satellite': sat, 'Satellite + Labels': hyb, 'Street map': osm }, {}, { position: 'topright' }).addTo(map);
+    L.control.layers({ 'Satellite': sat, 'Satellite + Labels': hyb, 'Street map': osm, '⛰️ Topography': topo }, {}, { position: 'topright' }).addTo(map);
     L.control.zoom({ position: 'topright' }).addTo(map);
 
     drawnItems = new L.FeatureGroup().addTo(map);
@@ -164,6 +132,9 @@ function initMap() {
             field.geometry = layer.toGeoJSON().geometry;
             field.areaHa = calcAreaHa(field.geometry);
             saveFields(fields);
+            if (layer.setTooltipContent) {
+                layer.setTooltipContent(`<strong>${field.name}</strong><br>${field.areaHa.toFixed(1)} ha`);
+            }
         });
         renderFieldList();
         updateStats();
@@ -194,6 +165,9 @@ function setTool(tool) {
         vertexCount = 0;
         if (map && drawControl) map.addControl(drawControl);
         setTimeout(() => { const b = document.querySelector('.leaflet-draw-draw-polygon'); if (b) b.click(); }, 60);
+        setStatus('Click to place corners · double-click (or first point) to close · Esc to cancel');
+        const toolHint = document.getElementById('toolHint');
+        if (toolHint) toolHint.textContent = 'Each click adds a corner. ↩ Undo removes the last point. Double-click to finish.';
         if (eb) eb.style.display = 'none';
     } else if (tool === 'edit') {
         const editBtn = document.getElementById('btnEdit');
@@ -206,6 +180,9 @@ function setTool(tool) {
         if (selectBtn) selectBtn.classList.add('active');
         vertexCount = 0;
         try { if (map && drawControl) map.removeControl(drawControl); } catch (e) {}
+        setStatus('Ready — select a field or use the drawing tools');
+        const toolHint = document.getElementById('toolHint');
+        if (toolHint) toolHint.textContent = 'Click a field on the map or in the list to select it.';
         if (ub) ub.style.display = 'none';
         if (eb) eb.style.display = selectedFieldId ? 'flex' : 'none';
         if (db) db.style.display = selectedFieldId ? 'flex' : 'none';
@@ -439,10 +416,13 @@ function selectField(fieldId) {
     if (fieldDetail) {
         fieldDetail.innerHTML = `
             <div class="detail-row"><span class="detail-key">Name</span><span class="detail-val">${escapeHtml(field.name)}</span></div>
+            <div class="detail-row"><span class="detail-key">Type</span><span class="detail-val">${cap(field.type)}</span></div>
             <div class="detail-row"><span class="detail-key">Area</span><span class="detail-val">${field.areaHa.toFixed(2)} ha</span></div>
             <div class="detail-row"><span class="detail-key">Status</span><span class="detail-val"><span class="pill pill-${status.cls}">${status.label}</span></span></div>
             <div class="detail-row"><span class="detail-key">Rest target</span><span class="detail-val">${field.restTarget} days</span></div>
             <div class="detail-row"><span class="detail-key">Days resting</span><span class="detail-val">${restDays !== null ? restDays + ' days' : 'No events yet'}</span></div>
+            <div class="detail-row"><span class="detail-key">Max AU/ha</span><span class="detail-val">${field.maxAUperHa || '—'}</span></div>
+            <div class="detail-row"><span class="detail-key">Events logged</span><span class="detail-val">${events.length}</span></div>
             ${progHTML}
             ${stockHTML}
             <div class="detail-actions">
@@ -612,4 +592,94 @@ function refreshMapColors() {
         const field = fields.find(f => f.id === layer.options.fieldId);
         if (field) styleLayer(layer, field);
     });
+}
+
+function loadFarmConfig() {
+    try {
+        const cfg = JSON.parse(localStorage.getItem('gt_config') || '{}');
+        const farmNameDisplay = document.getElementById('farmNameDisplay');
+        if (farmNameDisplay && cfg.farmName) farmNameDisplay.textContent = cfg.farmName;
+        if (cfg.lat && cfg.lng && map) map.setView([cfg.lat, cfg.lng], 14);
+    } catch (e) {}
+}
+
+function checkFirstRun() {
+    const done = localStorage.getItem('gt_setup_done');
+    if (!done && typeof openSetup === 'function') openSetup();
+}
+
+// ── HEATMAP OVERLAY LOGIC ──────────────────────────────────────
+
+function togglePressureHeatmap() {
+    heatmapActive = !heatmapActive;
+    const btn = document.getElementById('btnHeatmap');
+    if (btn) btn.classList.toggle('active', heatmapActive);
+
+    if (heatmapActive) {
+        // Disable NDVI if active
+        if (typeof ndviActive !== 'undefined' && ndviActive) toggleNDVIPanel();
+        applyPressureHeatmap();
+        setStatus('🔥 Grazing Pressure Heatmap active (Past 12 months)');
+    } else {
+        refreshMapColors();
+        setStatus('Ready');
+    }
+}
+
+function applyPressureHeatmap() {
+    const fields = loadFields();
+    const events = loadEvents();
+
+    // Calculate cutoff date for the past year
+    const oneYearAgo = new Date();
+    oneYearAgo.setFullYear(oneYearAgo.getFullYear() - 1);
+    const oneYearAgoStr = oneYearAgo.toISOString().slice(0, 10);
+
+    let maxPressure = 0.0001; // Avoid division by zero
+    const fieldPressures = {};
+
+    // 1. Calculate pressure per hectare for each field
+    fields.forEach(f => {
+        const fEvents = events.filter(e => e.fieldId === f.id && e.endDate >= oneYearAgoStr);
+        let totalAnimalDays = 0;
+
+        fEvents.forEach(e => {
+            // Only count grazing days within the last 365 days
+            const start = e.startDate < oneYearAgoStr ? oneYearAgoStr : e.startDate;
+            totalAnimalDays += (e.animalCount * daysBetween(start, e.endDate));
+        });
+
+        const density = f.areaHa > 0 ? (totalAnimalDays / f.areaHa) : 0;
+        fieldPressures[f.id] = density;
+
+        if (density > maxPressure) maxPressure = density;
+    });
+
+    // 2. Apply a Green -> Yellow -> Red gradient based on relative pressure
+    if (drawnItems) {
+        drawnItems.eachLayer(layer => {
+            if (layer.options && layer.options.fieldId) {
+                const density = fieldPressures[layer.options.fieldId] || 0;
+                const ratio = density / maxPressure; // Normalizes from 0.0 to 1.0
+
+                // Color calculation (0 = Green, 0.5 = Yellow, 1.0 = Red)
+                const r = ratio < 0.5 ? Math.round(255 * (ratio * 2)) : 255;
+                const g = ratio > 0.5 ? Math.round(255 * (1 - (ratio - 0.5) * 2)) : 255;
+                const color = `rgb(${r}, ${g}, 0)`;
+
+                layer.setStyle({
+                    fillColor: color,
+                    fillOpacity: 0.8,
+                    color: '#ffffff', // White borders to make them stand out
+                    weight: 2
+                });
+
+                // Update tooltip to show density
+                const tt = layer.getTooltip();
+                if (tt) {
+                    layer.bindTooltip(`<strong>${tt.getContent().split('<br>')[0].replace(/<[^>]+>/g, '')}</strong><br>${density.toFixed(0)} Animal-Days/ha`, { permanent: false });
+                }
+            }
+        });
+    }
 }

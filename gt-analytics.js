@@ -17,284 +17,354 @@ function renderAnalytics() {
         container.innerHTML = `
             <div class="warn-box" style="margin-top: 20px;">
                 <strong>No data available.</strong> Please draw fields and log grazing events to see analytics.
+//  gt-analytics.js  —  Analytics Overview Page
+//  Comprehensive farm data visualisation and insights
+// ============================================================
+'use strict';
+
+// ── Main render function ─────────────────────────────────────
+function renderAnalytics() {
+    const panel = document.getElementById('panel-analytics');
+    if (!panel) return;
+
+    // Make sure global functions are available
+    if (typeof loadFields === 'undefined') {
+        panel.innerHTML = '<div class="sv"><div class="empty-state"><div class="empty-icon">⚠️</div><p class="empty-msg">Loading...</p></div></div>';
+        return;
+    }
+
+    const fields = loadFields();
+    const events = loadEvents();
+    const groups = loadGroups();
+    const today = todayStr();
+
+    if (!fields.length) {
+        panel.innerHTML = `
+            <div class="sv" style="display:flex;align-items:center;justify-content:center">
+                <div class="empty-state">
+                    <div class="empty-icon">📊</div>
+                    <p class="empty-msg">No data to analyse yet</p>
+                    <p class="empty-sub">Add fields and log grazing events to see insights here.</p>
+                </div>
             </div>`;
         return;
     }
 
-    let html = `<div class="analytics-grid">`;
+    const totalHa = fields.reduce((s, f) => s + f.areaHa, 0);
+    const statuses = fields.map(f => getStatus(f));
+    const nGrazing = statuses.filter(s => s.cls === 'grazing').length;
+    const nReady = statuses.filter(s => s.cls === 'ready').length;
+    const nResting = statuses.filter(s => s.cls === 'resting').length;
+    const nDanger = statuses.filter(s => s.cls === 'danger').length;
+    const nNever = statuses.filter(s => s.cls === 'none').length;
 
-    // 1. Top Level KPIs
-    html += _buildAnalyticsKPIs(fields, events);
+    // Rest compliance
+    const restCompliance = fields.map(f => ({
+        name: f.name,
+        pct: getReadinessPct(f),
+        target: f.restTarget,
+        status: getStatus(f),
+        area: f.areaHa,
+        color: f.color
+    })).sort((a, b) => a.pct - b.pct);
 
-    // 2. Field Rest Readiness (Where to move next?)
-    html += _buildRestChart(fields, events);
+    const compliantCount = restCompliance.filter(f => f.pct >= 100).length;
+    const complianceRate = fields.length ? Math.round(compliantCount / fields.length * 100) : 0;
 
-    // 3. Grazing Pressure / Utilization (Are we overgrazing?)
-    html += _buildUtilizationChart(fields, events);
+    // Active animals
+    const activeEvents = events.filter(e => e.startDate <= today && e.endDate >= today);
+    const totalAnimalsGrazing = activeEvents.reduce((s, e) => s + (e.animalCount || 0), 0);
 
-    // 4. Herd Growth Estimator (Biomass Gain)
-    html += _buildHerdGrowthWidget(events);
-
-    // 5. Field Inspector Dropdown
-    html += _buildFieldInspector(fields);
-
-    html += `</div>`;
-    container.innerHTML = html;
-
-    // Initialize dropdown listener
-    const selectEl = document.getElementById('anFieldSelect');
-    if (selectEl) {
-        selectEl.addEventListener('change', (e) => _updateFieldDetails(e.target.value));
-        if (fields.length > 0) _updateFieldDetails(selectEl.value);
-    }
-}
-
-// ── KPI Dashboard ─────────────────────────────────────────────
-function _buildAnalyticsKPIs(fields, events) {
-    const totalHa = fields.reduce((sum, f) => sum + (f.areaHa || 0), 0);
-    const activeEvents = events.filter(e => new Date(e.endDate) >= new Date() && new Date(e.startDate) <= new Date());
-    const totalAnimals = activeEvents.reduce((sum, e) => sum + parseInt(e.animalCount || 0), 0);
-
-    let totalGrazingDays = 0;
-    events.forEach(e => {
-        const days = Math.max(1, Math.ceil((new Date(e.endDate) - new Date(e.startDate)) / 86400000));
-        totalGrazingDays += days;
-    });
-
-    return `
-        <div class="analytics-card" style="grid-column: 1 / -1; display: flex; gap: 20px; flex-wrap: wrap;">
-            <div style="flex:1; min-width: 200px; padding: 15px; background: #f8fafc; border-radius: 12px; border: 1px solid #e2e8f0;">
-                <div style="font-size: 12px; color: #64748b; text-transform: uppercase; font-weight: 700;">Total Farm Area</div>
-                <div style="font-size: 28px; font-weight: 800; color: #0f172a;">${totalHa.toFixed(1)} <span style="font-size: 16px; color: #64748b;">ha</span></div>
-            </div>
-            <div style="flex:1; min-width: 200px; padding: 15px; background: #f0fdf4; border-radius: 12px; border: 1px solid #bbf7d0;">
-                <div style="font-size: 12px; color: #166534; text-transform: uppercase; font-weight: 700;">Active on Pasture</div>
-                <div style="font-size: 28px; font-weight: 800; color: #15803d;">${totalAnimals} <span style="font-size: 16px; color: #166534;">head</span></div>
-            </div>
-            <div style="flex:1; min-width: 200px; padding: 15px; background: #fefce8; border-radius: 12px; border: 1px solid #fef08a;">
-                <div style="font-size: 12px; color: #854d0e; text-transform: uppercase; font-weight: 700;">Total Days Logged</div>
-                <div style="font-size: 28px; font-weight: 800; color: #a16207;">${totalGrazingDays} <span style="font-size: 16px; color: #854d0e;">days</span></div>
-            </div>
-        </div>
-    `;
-}
-
-// ── Graph 1: Field Rest Readiness ─────────────────────────────
-function _buildRestChart(fields, events) {
-    const now = new Date();
-
-    // Calculate rest days for each field
-    let restData = fields.map(f => {
-        const fEvents = events.filter(e => e.fieldId === f.id);
-        if (fEvents.length === 0) return { name: f.name, days: 60, status: 'Fresh', actualDays: '99+' };
-
-        const lastEvent = fEvents.sort((a, b) => new Date(b.endDate) - new Date(a.endDate))[0];
-        const endDate = new Date(lastEvent.endDate);
-        const startDate = new Date(lastEvent.startDate);
-
-        if (now >= startDate && now <= endDate) return { name: f.name, days: 0, status: 'Grazing', actualDays: 'Active' };
-
-        const daysResting = Math.floor((now - endDate) / 86400000);
-        return { name: f.name, days: Math.max(0, daysResting), status: 'Resting', actualDays: daysResting };
-    });
-
-    // Sort by most rested first
-    restData.sort((a, b) => b.days - a.days);
-
-    // Cap visual bar at 60 days to keep the graph scaled
-    const maxGraphDays = 60;
-
-    let rowsHtml = restData.map(d => {
-        let color = '#ef4444'; // Red (Under 20 days)
-        if (d.status === 'Grazing') color = '#3b82f6'; // Blue
-        else if (d.days >= 40) color = '#10b981'; // Green (Fully rested)
-        else if (d.days >= 20) color = '#f59e0b'; // Yellow (Partial rest)
-
-        let pct = Math.min(100, (d.days / maxGraphDays) * 100);
-        if (d.status === 'Grazing') pct = 100; // Fill bar for active grazing
-
-        return `
-            <div style="margin-bottom: 12px;">
-                <div style="display: flex; justify-content: space-between; font-size: 13px; margin-bottom: 4px; font-weight:600;">
-                    <span>${escapeHtml(d.name)}</span>
-                    <span style="color:${color}">${d.actualDays} ${d.status === 'Grazing' ? '' : 'days'}</span>
-                </div>
-                <div style="width: 100%; background: #f1f5f9; border-radius: 6px; height: 16px; overflow: hidden;">
-                    <div style="width: ${pct}%; background: ${color}; height: 100%; border-radius: 6px; ${d.status === 'Grazing' ? 'background-image: repeating-linear-gradient(45deg, rgba(255,255,255,0.2) 0, rgba(255,255,255,0.2) 10px, transparent 10px, transparent 20px);' : ''}"></div>
-                </div>
-            </div>
-        `;
-    }).join('');
-
-    return `
-        <div class="analytics-card">
-            <div class="analytics-card-title">🌱 Rest Readiness (Where to next?)</div>
-            <p style="font-size: 12px; color: #64748b; margin-bottom: 15px;">Days since last grazing event. Target is 40+ days (Green) for optimal recovery.</p>
-            <div style="max-height: 250px; overflow-y: auto; padding-right: 5px;">
-                ${rowsHtml}
-            </div>
-        </div>
-    `;
-}
-
-// ── Graph 2: Grazing Pressure (AUD/ha) ────────────────────────
-function _buildUtilizationChart(fields, events) {
-    let utilData = fields.map(f => {
-        const fEvents = events.filter(e => e.fieldId === f.id);
-        let aud = 0; // Animal Unit Days
-        fEvents.forEach(e => {
-            const days = Math.max(1, Math.ceil((new Date(e.endDate) - new Date(e.startDate)) / 86400000));
-            aud += days * (parseInt(e.animalCount) || 0);
-        });
-
-        const audHa = f.areaHa > 0 ? (aud / f.areaHa) : 0;
-        return { name: f.name, audHa: audHa, area: f.areaHa };
-    });
-
-    // Sort by heaviest utilized first
-    utilData.sort((a, b) => b.audHa - a.audHa);
-    const maxAud = Math.max(...utilData.map(d => d.audHa), 1);
-
-    let rowsHtml = utilData.map(d => {
-        const pct = Math.min(100, (d.audHa / maxAud) * 100);
-        // Gradient from Green (low use) to Red (heavy use)
-        const hue = 120 - (pct * 1.2);
-        const color = `hsl(${hue}, 70%, 45%)`;
-
-        return `
-            <div style="margin-bottom: 12px;">
-                <div style="display: flex; justify-content: space-between; font-size: 13px; margin-bottom: 4px; font-weight:600;">
-                    <span>${escapeHtml(d.name)}</span>
-                    <span style="color:${color}">${Math.round(d.audHa).toLocaleString()} AUD/ha</span>
-                </div>
-                <div style="width: 100%; background: #f1f5f9; border-radius: 6px; height: 16px; overflow: hidden;">
-                    <div style="width: ${pct}%; background: ${color}; height: 100%; border-radius: 6px;"></div>
-                </div>
-            </div>
-        `;
-    }).join('');
-
-    return `
-        <div class="analytics-card">
-            <div class="analytics-card-title">⚠️ Grazing Pressure (AUD/ha)</div>
-            <p style="font-size: 12px; color: #64748b; margin-bottom: 15px;">Animal Unit Days per Hectare. Identifies which fields are bearing the heaviest loads relative to their size.</p>
-            <div style="max-height: 250px; overflow-y: auto; padding-right: 5px;">
-                ${rowsHtml}
-            </div>
-        </div>
-    `;
-}
-
-// ── Graph 3: Estimated Herd Growth ────────────────────────────
-function _buildHerdGrowthWidget(events) {
-    if (events.length === 0) return '';
-    const herdStats = {};
-
-    events.forEach(e => {
-        const herdName = e.herd || 'Unnamed Herd';
-        if (!herdStats[herdName]) herdStats[herdName] = { type: e.animalType, totalDays: 0, headCount: parseInt(e.animalCount) || 0, gainKg: 0 };
-
-        const days = Math.max(1, Math.ceil((new Date(e.endDate) - new Date(e.startDate)) / 86400000));
-        herdStats[herdName].totalDays += days;
-        herdStats[herdName].gainKg += (days * herdStats[herdName].headCount * (ADG_RATES[e.animalType] || 0.5));
-    });
-
-    const maxGain = Math.max(...Object.values(herdStats).map(h => h.gainKg), 1);
-
-    let rowsHtml = Object.keys(herdStats).map(herd => {
-        const stats = herdStats[herd];
-        const pct = Math.min(100, (stats.gainKg / maxGain) * 100);
-        const emoji = { cattle: '🐄', sheep: '🐑', goats: '🐐', horses: '🐎', pigs: '🐷', mixed: '🐾' }[stats.type] || '🐄';
-
-        return `
-            <div style="margin-bottom: 16px;">
-                <div style="display: flex; justify-content: space-between; font-size: 14px; margin-bottom: 4px;">
-                    <span style="font-weight: 600;">${emoji} ${escapeHtml(herd)} <span style="color:#64748b; font-size: 11px;">(${stats.headCount} head)</span></span>
-                    <span style="font-weight: 700; color: #8b5cf6;">+${Math.round(stats.gainKg).toLocaleString()} kg</span>
-                </div>
-                <div style="width: 100%; background: #f1f5f9; border-radius: 6px; height: 16px; overflow: hidden;">
-                    <div style="width: ${pct}%; background: linear-gradient(90deg, #a78bfa, #8b5cf6); height: 100%; border-radius: 6px;"></div>
-                </div>
-            </div>
-        `;
-    }).join('');
-
-    return `
-        <div class="analytics-card">
-            <div class="analytics-card-title">📈 Estimated Biomass Gain</div>
-            <p style="font-size: 12px; color: #64748b; margin-bottom: 15px;">Calculated using Average Daily Gain (ADG) metrics × head count × days on pasture.</p>
-            ${rowsHtml}
-        </div>
-    `;
-}
-
-// ── Dropdown Field Inspector ──────────────────────────────────
-function _buildFieldInspector(fields) {
-    const options = fields.map(f => `<option value="${f.id}">${escapeHtml(f.name)} (${f.areaHa.toFixed(1)} ha)</option>`).join('');
-
-    return `
-        <div class="analytics-card" style="grid-column: 1 / -1;">
-            <div class="analytics-card-title">🔍 Deep Dive: Field Inspector</div>
-            <div class="fg" style="max-width: 400px; margin-bottom:15px;">
-                <select id="anFieldSelect" style="width: 100%; padding: 10px; border-radius: 8px; border: 1px solid #cbd5e1; font-weight: 600;">
-                    ${options}
-                </select>
-            </div>
-            <div id="anFieldDetails" style="border-top: 1px solid #e2e8f0; padding-top: 15px;"></div>
-        </div>
-    `;
-}
-
-function _updateFieldDetails(fieldId) {
-    const container = document.getElementById('anFieldDetails');
-    if (!container) return;
-
-    const fields = loadFields();
-    const events = loadEvents();
-    const field = fields.find(f => f.id === fieldId);
-    if (!field) return;
-
-    const fieldEvents = events.filter(e => e.fieldId === fieldId).sort((a, b) => new Date(b.startDate) - new Date(a.startDate));
-
-    let totalDays = 0,
-        totalAnimals = 0;
-    fieldEvents.forEach(e => {
-        totalDays += Math.max(1, Math.ceil((new Date(e.endDate) - new Date(e.startDate)) / 86400000));
-        totalAnimals += parseInt(e.animalCount) || 0;
-    });
-
-    const stockDensity = field.areaHa > 0 ? (totalAnimals / field.areaHa).toFixed(1) : 0;
-
-    let historyHtml = '<div style="font-size: 13px; color: #64748b;">No grazing history.</div>';
-    if (fieldEvents.length > 0) {
-        historyHtml = fieldEvents.map(e => {
-            const s = new Date(e.startDate).toLocaleDateString(undefined, { month: 'short', day: 'numeric' });
-            const ed = new Date(e.endDate).toLocaleDateString(undefined, { month: 'short', day: 'numeric' });
-            const emoji = { cattle: '🐄', sheep: '🐑', goats: '🐐', horses: '🐎', pigs: '🐷', mixed: '🐾' }[e.animalType] || '🐄';
-            return `
-                <div style="display: flex; justify-content: space-between; padding: 10px; background: #f8fafc; border-radius: 8px; margin-bottom: 8px; border: 1px solid #f1f5f9;">
-                    <div>
-                        <div style="font-weight: 600; font-size: 13px;">${emoji} ${escapeHtml(e.herd)}</div>
-                        <div style="font-size: 11px; color: #64748b;">${s} - ${ed}</div>
-                    </div>
-                    <div style="font-weight: 700; color: #0f172a; font-size: 13px;">${e.animalCount} head</div>
-                </div>
-            `;
-        }).join('');
+    // Monthly event counts for timeline
+    const last6Months = [];
+    for (let i = 5; i >= 0; i--) {
+        const d = new Date();
+        d.setMonth(d.getMonth() - i);
+        const key = d.toISOString().slice(0, 7);
+        const count = events.filter(e => e.startDate.startsWith(key)).length;
+        last6Months.push({ month: key, count, label: monthLabel(key) });
     }
 
-    container.innerHTML = `
-        <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 20px; margin-bottom: 20px;">
-            <div style="background: #eff6ff; padding: 15px; border-radius: 12px;">
-                <div style="font-size: 11px; font-weight: 700; text-transform: uppercase; color: #1d4ed8;">Stocking Density</div>
-                <div style="font-size: 24px; font-weight: 800; color: #1e3a8a;">${stockDensity} <span style="font-size: 14px;">head/ha</span></div>
+    // Field performance data
+    const fieldPerformance = fields.map(f => {
+        const fEvents = events.filter(e => e.fieldId === f.id).sort((a, b) => b.startDate.localeCompare(a.startDate));
+        const totalGrazingDays = fEvents.reduce((s, e) => s + daysBetween(e.startDate, e.endDate), 0);
+        const lastEvent = fEvents[0];
+        const lastGrazed = lastEvent ? lastEvent.endDate : null;
+        const daysSinceLast = lastGrazed ? daysSince(lastGrazed) : null;
+        const avgAUperHa = fEvents.length ? (fEvents.reduce((s, e) => s + e.animalCount, 0) / fEvents.length / f.areaHa).toFixed(2) : '—';
+        const utilization = f.restTarget > 0 ? Math.min(100, Math.round((totalGrazingDays / 365) * 100)) : 0;
+
+        return {
+            id: f.id,
+            name: f.name,
+            area: f.areaHa,
+            type: f.type,
+            status: getStatus(f),
+            restPct: getReadinessPct(f),
+            restTarget: f.restTarget,
+            eventCount: fEvents.length,
+            totalGrazingDays,
+            lastGrazed,
+            daysSinceLast,
+            avgAUperHa,
+            utilization,
+            color: f.color,
+            maxAUperHa: f.maxAUperHa
+        };
+    });
+
+    // Build the analytics HTML
+    const html = `
+    <div class="sv">
+        <div class="analytics-header">
+            <h2>📊 Farm Analytics</h2>
+            <p>Comprehensive overview of your grazing operation — ${today}</p>
+        </div>
+
+        <!-- KPI Row -->
+        <div class="kpi-row" style="margin-top:20px">
+            <div class="kpi">
+                <div class="kpi-lbl">Total Fields</div>
+                <div class="kpi-val">${fields.length}</div>
+                <div class="kpi-sub">${totalHa.toFixed(1)} ha total</div>
             </div>
-            <div style="background: #fdf4ff; padding: 15px; border-radius: 12px;">
-                <div style="font-size: 11px; font-weight: 700; text-transform: uppercase; color: #a21caf;">Cumulative Days</div>
-                <div style="font-size: 24px; font-weight: 800; color: #701a75;">${totalDays} <span style="font-size: 14px;">days</span></div>
+            <div class="kpi">
+                <div class="kpi-lbl">Grazing Now</div>
+                <div class="kpi-val">${nGrazing}</div>
+                <div class="kpi-sub">${totalAnimalsGrazing} animals active</div>
+            </div>
+            <div class="kpi">
+                <div class="kpi-lbl">Ready to Graze</div>
+                <div class="kpi-val">${nReady}</div>
+                <div class="kpi-sub">${nNever ? nNever + ' never grazed' : 'rest targets met'}</div>
+            </div>
+            <div class="kpi">
+                <div class="kpi-lbl">Rest Compliance</div>
+                <div class="kpi-val">${complianceRate}%</div>
+                <div class="kpi-sub">${compliantCount}/${fields.length} fields ready</div>
+            </div>
+            <div class="kpi">
+                <div class="kpi-lbl">Total Events</div>
+                <div class="kpi-val">${events.length}</div>
+                <div class="kpi-sub">all time</div>
             </div>
         </div>
-        <h4 style="font-size: 14px; font-weight: 700; margin-bottom: 12px;">History Log</h4>
-        <div style="max-height: 200px; overflow-y: auto; padding-right: 5px;">${historyHtml}</div>
-    `;
+
+        <div class="analytics-grid" style="margin-top:20px">
+            <!-- Rest Compliance Bar Chart -->
+            <div class="analytics-card">
+                <div class="analytics-card-title">📈 Rest Compliance by Field</div>
+                <div class="bar-chart">
+                    ${restCompliance.map(f => {
+                        const cls = f.pct >= 100 ? 'good' : f.pct >= 50 ? 'warn' : 'bad';
+                        return `
+                        <div class="bar-col" title="${f.name}: ${f.pct}%">
+                            <div class="bar-value">${f.pct}%</div>
+                            <div class="bar-fill ${cls}" style="height:${Math.max(4, f.pct * 1.6)}px"></div>
+                            <div class="bar-label">${f.name.length > 10 ? f.name.slice(0, 9) + '…' : f.name}</div>
+                        </div>`;
+                    }).join('')}
+                </div>
+                <div style="display:flex;gap:12px;margin-top:12px;font-size:10px;color:var(--text-muted);justify-content:center">
+                    <span>🟢 Ready (≥100%)</span>
+                    <span>🟡 In Progress (50-99%)</span>
+                    <span>🔴 Needs Attention (&lt;50%)</span>
+                </div>
+            </div>
+
+            <!-- Farm Area Breakdown (Donut) -->
+            <div class="analytics-card">
+                <div class="analytics-card-title">🌾 Farm Area Breakdown</div>
+                <div class="chart-donut-wrap">
+                    ${buildDonutChart(fields)}
+                </div>
+            </div>
+
+            <!-- Grazing Activity Timeline -->
+            <div class="analytics-card">
+                <div class="analytics-card-title">📅 Monthly Grazing Activity</div>
+                <div class="bar-chart" style="height:140px">
+                    ${last6Months.map(m => {
+                        const maxCount = Math.max(...last6Months.map(x => x.count), 1);
+                        const h = Math.max(4, (m.count / maxCount) * 110);
+                        return `
+                        <div class="bar-col">
+                            <div class="bar-value">${m.count}</div>
+                            <div class="bar-fill good" style="height:${h}px;background:linear-gradient(180deg,#60a5fa,#3b82f6)"></div>
+                            <div class="bar-label">${m.label}</div>
+                        </div>`;
+                    }).join('')}
+                </div>
+            </div>
+
+            <!-- Field Performance Table -->
+            <div class="analytics-card wide">
+                <div class="analytics-card-title">📋 Field Performance Overview</div>
+                <div style="overflow-x:auto">
+                    <table class="htbl">
+                        <thead>
+                            <tr>
+                                <th>Field</th>
+                                <th>Area</th>
+                                <th>Status</th>
+                                <th>Rest %</th>
+                                <th>Events</th>
+                                <th>Grazing Days</th>
+                                <th>Last Grazed</th>
+                                <th>Avg AU/ha</th>
+                                <th>Utilisation</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            ${fieldPerformance.map(f => `
+                            <tr onclick="if(typeof switchTab === 'function'){switchTab('map');setTimeout(function(){if(typeof selectField === 'function') selectField('${f.id}');},100)}" style="cursor:pointer">
+                                <td style="font-weight:700">
+                                    <span class="field-dot" style="display:inline-block;width:8px;height:8px;background:${f.color};border-radius:50%;margin-right:6px"></span>
+                                    ${escapeHtml(f.name)}
+                                 </td>
+                                 <td>${f.area.toFixed(1)} ha</td>
+                                 <td><span class="pill pill-${f.status.cls}">${f.status.label}</span></td>
+                                 <td><strong style="color:${f.restPct >= 100 ? '#16a34a' : f.restPct >= 50 ? '#d97706' : '#dc2626'}">${f.restPct}%</strong></td>
+                                 <td>${f.eventCount}</td>
+                                 <td>${f.totalGrazingDays}</td>
+                                 <td>${f.lastGrazed ? fmtDate(f.lastGrazed) + (f.daysSinceLast !== null ? ' (' + f.daysSinceLast + 'd ago)' : '') : 'Never'}</td>
+                                 <td>${f.avgAUperHa}</td>
+                                 <td>
+                                    <div style="display:flex;align-items:center;gap:4px">
+                                        <div style="flex:1;height:5px;background:var(--border-light);border-radius:10px;overflow:hidden">
+                                            <div style="height:100%;width:${f.utilization}%;background:${f.utilization > 80 ? '#f87171' : f.utilization > 40 ? '#fbbf24' : '#4ade80'};border-radius:10px"></div>
+                                        </div>
+                                        <span style="font-size:10px;font-weight:700">${f.utilization}%</span>
+                                    </div>
+                                 </td>
+                             </tr>`).join('')}
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+
+            <!-- Stocking Rate Summary -->
+            <div class="analytics-card">
+                <div class="analytics-card-title">📊 Stocking Rate Summary</div>
+                ${buildStockingSummary(fields, events)}
+            </div>
+
+            <!-- Animal Groups Summary -->
+            <div class="analytics-card">
+                <div class="analytics-card-title">🐄 Animal Groups</div>
+                ${groups.length ? groups.map(g => `
+                    <div class="grp-row" style="margin-bottom:6px">
+                        <div class="grp-row-icon">${getGroupEmoji(g.type)}</div>
+                        <div class="grp-row-info">
+                            <div class="grp-row-name">${escapeHtml(g.name)}</div>
+                            <div class="grp-row-sub">${g.count} ${g.type}${g.herd ? ' · ' + escapeHtml(g.herd) : ''}</div>
+                        </div>
+                    </div>`).join('') : '<p style="color:var(--text-muted);font-size:12px">No animal groups defined yet.</p>'}
+            </div>
+        </div>
+    </div>`;
+
+    panel.innerHTML = html;
+}
+
+function escapeHtml(str) {
+    if (!str) return '';
+    return str.replace(/[&<>]/g, function(m) {
+        if (m === '&') return '&amp;';
+        if (m === '<') return '&lt;';
+        if (m === '>') return '&gt;';
+        return m;
+    });
+}
+
+// ── Donut Chart Builder ──────────────────────────────────────
+function buildDonutChart(fields) {
+    const totalHa = fields.reduce((s, f) => s + f.areaHa, 0);
+    if (!totalHa) return '<p style="color:var(--text-muted);font-size:12px">No area data.</p>';
+
+    const R = 70, cx = 90, cy = 90, stroke = 22;
+    const circ = 2 * Math.PI * R;
+    const sorted = [...fields].sort((a, b) => b.areaHa - a.areaHa);
+
+    let offset = 0;
+    const arcs = sorted.map(f => {
+        const pct = f.areaHa / totalHa;
+        const dash = circ * pct;
+        const gap = circ - dash;
+        const arc = `<circle cx="${cx}" cy="${cy}" r="${R}"
+            fill="none" stroke="${f.color}" stroke-width="${stroke}"
+            stroke-dasharray="${dash.toFixed(2)} ${gap.toFixed(2)}"
+            stroke-dashoffset="${(-offset * circ).toFixed(2)}"
+            transform="rotate(-90 ${cx} ${cy})"
+            style="transition:stroke-dasharray .5s ease">
+            <title>${escapeHtml(f.name)}: ${f.areaHa.toFixed(1)} ha (${(pct*100).toFixed(1)}%)</title>
+        </circle>`;
+        offset += pct;
+        return arc;
+    }).join('');
+
+    const legend = sorted.slice(0, 8).map(f => {
+        const pct = (f.areaHa / totalHa * 100).toFixed(1);
+        return `<div class="chart-legend-item">
+            <span class="chart-legend-dot" style="background:${f.color}"></span>
+            <span style="flex:1">${escapeHtml(f.name)}</span>
+            <span style="font-weight:700;font-size:11px">${f.areaHa.toFixed(1)} ha</span>
+            <span style="color:var(--text-muted);font-size:10px">${pct}%</span>
+        </div>`;
+    }).join('');
+
+    return `
+        <svg width="180" height="180" viewBox="0 0 180 180">
+            <circle cx="${cx}" cy="${cy}" r="${R}" fill="none" stroke="var(--border-light)" stroke-width="${stroke}"/>
+            ${arcs}
+            <text x="${cx}" y="${cy - 8}" text-anchor="middle" font-size="20" font-weight="900" fill="var(--text)">${totalHa.toFixed(1)}</text>
+            <text x="${cx}" y="${cy + 12}" text-anchor="middle" font-size="10" fill="var(--text-muted)">total ha</text>
+        </svg>
+        <div class="chart-legend">${legend}</div>`;
+}
+
+// ── Stocking Summary ─────────────────────────────────────────
+function buildStockingSummary(fields, events) {
+    const rows = fields.map(f => {
+        const fEvents = events.filter(e => e.fieldId === f.id);
+        if (!fEvents.length) return null;
+        const last = fEvents.sort((a, b) => b.startDate.localeCompare(a.startDate))[0];
+        const auHa = (last.animalCount / f.areaHa).toFixed(2);
+        const over = f.maxAUperHa && parseFloat(auHa) > f.maxAUperHa;
+        return { name: f.name, auHa: parseFloat(auHa), max: f.maxAUperHa, over, color: f.color };
+    }).filter(Boolean).sort((a, b) => b.auHa - a.auHa);
+
+    if (!rows.length) return '<p style="color:var(--text-muted);font-size:12px">No stocking data available.</p>';
+
+    const maxAU = Math.max(...rows.map(r => r.auHa), 1);
+    return rows.map(r => {
+        const barW = Math.round((r.auHa / maxAU) * 100);
+        return `
+        <div style="margin-bottom:10px">
+            <div style="display:flex;justify-content:space-between;font-size:11px;margin-bottom:3px">
+                <span style="font-weight:600">${escapeHtml(r.name)}</span>
+                <span style="color:${r.over ? '#dc2626' : 'var(--text-secondary)'};font-weight:700">
+                    ${r.auHa.toFixed(1)} AU/ha
+                    ${r.max ? ' / max ' + r.max : ''}
+                    ${r.over ? ' ⚠' : ''}
+                </span>
+            </div>
+            <div style="height:7px;background:var(--border-light);border-radius:10px;overflow:hidden">
+                <div style="height:100%;width:${barW}%;background:${r.over ? '#f87171' : '#4ade80'};border-radius:10px;transition:width .5s"></div>
+            </div>
+        </div>`;
+    }).join('');
+}
+
+// ── Helpers ──────────────────────────────────────────────────
+function monthLabel(key) {
+    const [yr, mo] = key.split('-');
+    const names = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+    return names[parseInt(mo, 10) - 1] + ' ' + yr.slice(2);
+}
+
+function getGroupEmoji(type) {
+    const map = { cattle: '🐄', sheep: '🐑', goats: '🐐', horses: '🐎', pigs: '🐷', mixed: '🐾' };
+    return map[(type || '').toLowerCase()] || '🐾';
 }

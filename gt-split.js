@@ -1,6 +1,6 @@
 // ============================================================
-//  gt-split.js  —  Field splitting tool
-//  Select existing fields, manually set sizes and gradients
+//  gt-split.js  —  Farm boundary split tool (Improved workflow)
+//  Simplified UI: Draw → Count → Adjust sizes & orientations
 // ============================================================
 'use strict';
 
@@ -96,6 +96,41 @@ function _asInitMap() {
     L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/Reference/World_Boundaries_and_Places/MapServer/tile/{z}/{y}/{x}', { maxZoom: 19, opacity: 0.7 }).addTo(AS.map);
 
     AS.drawn = new L.FeatureGroup().addTo(AS.map);
+
+    AS.drawControl = new L.Control.Draw({
+        position: 'topright',
+        draw: {
+            polygon: { allowIntersection: false, showArea: true, shapeOptions: { color: '#2d6a4f', fillColor: '#2d6a4f', fillOpacity: 0.12, weight: 3, dashArray: '6 3' } },
+            polyline: false,
+            rectangle: false,
+            circle: false,
+            circlemarker: false,
+            marker: false
+        },
+        edit: { featureGroup: AS.drawn, remove: false }
+    });
+    AS.map.addControl(AS.drawControl);
+
+    setTimeout(() => {
+        const mapEl = document.getElementById('asMap');
+        if (mapEl) {
+            const btn = mapEl.querySelector('.leaflet-draw-draw-polygon');
+            if (btn) btn.click();
+        }
+    }, 300);
+
+    AS.map.on(L.Draw.Event.CREATED, e => {
+        if (AS.boundaryLayer) AS.drawn.removeLayer(AS.boundaryLayer);
+        _asClearCampLayers();
+        AS.boundaryLayer = e.layer;
+        AS.boundaryLayer.setStyle({ color: '#2d6a4f', fillColor: '#2d6a4f', fillOpacity: 0.12, weight: 3 });
+        AS.drawn.addLayer(AS.boundaryLayer);
+        AS.boundary = AS.boundaryLayer.toGeoJSON().geometry;
+        _asResetDividers();
+        _asRebuildCamps();
+        _asDrawCampLayers();
+        _asRenderPanel();
+    });
 }
 
 function _asDestroyMap() {
@@ -103,46 +138,9 @@ function _asDestroyMap() {
         try { AS.map.remove(); } catch (e) {}
         AS.map = null;
     }
-    AS.drawn = null;
-    AS.boundaryLayer = null;
-    AS.campLayers = [];
 }
 
-// ── Load Existing Field ───────────────────────────────────────
-function asLoadFieldToSplit() {
-    const select = document.getElementById('asSelectField');
-    if (!select) return;
-
-    const fieldId = select.value;
-    const field = loadFields().find(f => f.id === fieldId);
-    if (!field) return;
-
-    AS.boundary = field.geometry;
-    AS.sourceFieldId = fieldId;
-
-    if (AS.boundaryLayer) AS.drawn.removeLayer(AS.boundaryLayer);
-    _asClearCampLayers();
-
-    AS.boundaryLayer = L.geoJSON(AS.boundary, { style: { color: '#2d6a4f', fillColor: '#2d6a4f', fillOpacity: 0.12, weight: 3 } }).addTo(AS.drawn);
-    AS.map.fitBounds(AS.boundaryLayer.getBounds(), { padding: [30, 30] });
-
-    _asResetDividers();
-    _asRebuildCamps();
-    _asDrawCampLayers();
-    _asRenderPanel();
-}
-
-// ── Divider reset ─────────────────────────────────────────────
-function _asResetDividers() {
-    const n = AS.count;
-    AS.dividers = Array.from({ length: n - 1 }, (_, i) => ({ pos: (i + 1) / n, angle: 0 }));
-    const cols = Math.ceil(Math.sqrt(n));
-    const rows = Math.ceil(n / cols);
-    AS.colDividers = Array.from({ length: cols - 1 }, (_, i) => (i + 1) / cols);
-    AS.rowDividers = Array.from({ length: rows - 1 }, (_, i) => (i + 1) / rows);
-}
-
-// ── Panel renderer ────────────────────────────────────────────
+// ── UI Render ──────────────────────────────────────────────────
 function _asRenderPanel() {
     const panel = document.getElementById('asControlPanel');
     if (!panel) return;
@@ -153,11 +151,17 @@ function _asRenderPanel() {
             <div class="as-reshape-state">
                 <div class="as-reshape-icon" style="background:${camp.color}">✎</div>
                 <p class="as-reshape-title">Reshaping: ${camp.name}</p>
-                <p class="as-reshape-sub">Drag the white handles on the map to move corners.<br>Click on a boundary line to add a new corner.</p>
+                <p class="as-reshape-sub">
+                    Drag the white handles on the map to move corners.<br>
+                    Click on a boundary line to add a new corner.
+                </p>
                 <div class="as-reshape-actions">
                     <button class="btn-primary" onclick="_asFinishReshape(true)">✓ Save shape</button>
                     <button class="btn-ghost"   onclick="_asFinishReshape(false)">✕ Cancel</button>
                 </div>
+                <p class="as-reshape-note">
+                    Changing count or direction will recalculate all camps and reset reshaping.
+                </p>
             </div>`;
         document.getElementById('asSaveBtn').disabled = true;
         return;
@@ -180,12 +184,8 @@ function _asRenderPanel() {
         panel.innerHTML = `
             <div class="as-welcome">
                 <div class="as-welcome-icon">⬡</div>
-                <p class="as-welcome-title">Select a Field</p>
-                <p class="as-welcome-sub">Choose an existing field to split into smaller camps.</p>
-                <select id="asSelectField" style="width:100%; padding:10px; border-radius:8px; border:1px solid var(--border); margin-bottom:12px;">
-                    ${options}
-                </select>
-                <button class="btn-primary" style="width:100%" onclick="asLoadFieldToSplit()">Load Field for Splitting</button>
+                <p class="as-welcome-title">Draw your farm boundary</p>
+                <p class="as-welcome-sub">Click the polygon tool on the map, trace the outer edge of your farm, then double-click the last point to close the shape.</p>
             </div>`;
         document.getElementById('asSaveBtn').disabled = true;
         return;
@@ -194,36 +194,39 @@ function _asRenderPanel() {
     const totalHa = AS.camps.reduce((s, c) => s + c.areaHa, 0);
     panel.innerHTML = `
         <div class="as-section">
-            <div class="as-section-title">Number of camps</div>
-            <div class="as-count-row">
+            <div class="as-section-title">How many camps?</div>
+            <div class="as-count-input-row">
                 <button class="as-count-btn" onclick="asSetCount(AS.count-1)">−</button>
-                <span class="as-count-num" id="asCampNum">${AS.count}</span>
+                <input type="number" id="asCampNumInput" class="as-count-input" min="1" max="50" value="${AS.count}"
+                    onchange="asSetCount(parseInt(this.value))" onkeydown="if(event.key==='Enter')asSetCount(parseInt(this.value))">
                 <button class="as-count-btn" onclick="asSetCount(AS.count+1)">+</button>
-                <input type="range" class="as-slider" min="1" max="20" value="${AS.count}" oninput="asSetCount(parseInt(this.value))">
             </div>
-            <div class="as-section-title" style="margin-top:10px">Split direction</div>
+        </div>
+
+        <div class="as-section">
+            <div class="as-section-title">Split direction</div>
             <div class="as-dir-row">
                 <button class="as-dir-btn${AS.dir==='vertical'  ?' active':''}" onclick="asSetDir('vertical')">↕ Vertical</button>
                 <button class="as-dir-btn${AS.dir==='horizontal'?' active':''}" onclick="asSetDir('horizontal')">↔ Horizontal</button>
                 <button class="as-dir-btn${AS.dir==='grid'      ?' active':''}" onclick="asSetDir('grid')">⊞ Grid</button>
             </div>
-            <button class="as-redraw-btn" onclick="_asClearSelection()">↺ Pick a different field</button>
         </div>
 
         <div class="as-section">
-            <div class="as-section-title">Camp sizes <span class="as-section-hint">— manually set gradients</span></div>
+            <div class="as-section-title">Adjust sizes & orientation</div>
             ${AS.camps.length === 0
-                ? '<p class="as-no-dividers" style="color:#dc2626">Could not split — try a simpler shape.</p>'
+                ? '<p class="as-no-dividers" style="color:#dc2626">Could not split — try a different direction or a simpler farm shape.</p>'
                 : _asBuildDividerHTML()}
         </div>
 
         <div class="as-section">
-            <div class="as-section-title">Camps <span class="as-section-hint">— rename or reshape</span></div>
+            <div class="as-section-title">Camp names & reshape</div>
             <div class="as-name-list">
                 ${AS.camps.map((c,i) => `
                 <div class="as-name-row">
                     <span class="as-camp-dot" style="background:${c.color}"></span>
-                    <input class="as-name-input" type="text" value="${c.name}" oninput="AS.camps[${i}].name=this.value">
+                    <input class="as-name-input" type="text" value="${c.name}"
+                        oninput="AS.camps[${i}].name=this.value" placeholder="Camp name">
                     <span class="as-size-lbl" id="as-size-${i}">${c.areaHa.toFixed(1)} ha</span>
                     <button class="as-reshape-btn" title="Reshape this camp" onclick="asReshapeCamp(${i})">✎</button>
                 </div>`).join('')}
@@ -232,23 +235,38 @@ function _asRenderPanel() {
 
         <div class="as-total-badge" id="asTotalBadge">
             ${AS.camps.length} camp${AS.camps.length!==1?'s':''} · ${totalHa.toFixed(1)} ha total
+        </div>
+
+        <div class="as-action-row" style="margin-top:12px;display:flex;gap:8px;">
+            <button class="as-redraw-btn" style="flex:1;" onclick="_asRedrawBoundary()">↺ Redraw boundary</button>
         </div>`;
 
     document.getElementById('asSaveBtn').disabled = AS.camps.length === 0;
 }
 
-function _asClearSelection() {
-    if (AS.boundaryLayer) AS.drawn.removeLayer(AS.boundaryLayer);
+// ── Redraw boundary without closing the modal ─────────────────
+function _asRedrawBoundary() {
+    if (AS.boundaryLayer) {
+        AS.drawn.removeLayer(AS.boundaryLayer);
+        AS.boundaryLayer = null;
+    }
     _asClearCampLayers();
     AS.boundary = null;
-    AS.sourceFieldId = null;
-    AS.camps = [];
+    AS.camps    = [];
     _asRenderPanel();
+    setTimeout(() => {
+        const mapEl = document.getElementById('asMap');
+        if (mapEl) {
+            const btn = mapEl.querySelector('.leaflet-draw-draw-polygon');
+            if (btn) btn.click();
+        }
+    }, 80);
 }
 
 // ── Divider HTML ──────────────────────────────────────────────
 function _asBuildDividerHTML() {
-    if (AS.camps.length <= 1) return '<p class="as-no-dividers">Only one camp — increase the count above.</p>';
+    if (AS.camps.length <= 1)
+        return '<p class="as-no-dividers">Only one camp — increase the count above.</p>';
 
     if (AS.dir === 'grid') {
         let html = '';
@@ -258,7 +276,12 @@ function _asBuildDividerHTML() {
                 const pct = Math.round(v*100);
                 const lo  = i===0 ? 5 : Math.round(AS.colDividers[i-1]*100)+5;
                 const hi  = i===AS.colDividers.length-1 ? 95 : Math.round(AS.colDividers[i+1]*100)-5;
-                return `<div class="as-div-row"><span class="as-div-lbl">Col ${i+1}|${i+2}</span><input type="range" id="as-cdiv-${i}" class="as-div-slider" min="${lo}" max="${hi}" value="${pct}" oninput="asOnColDiv(${i},this.value)"><span class="as-div-pct" id="as-cdiv-pct-${i}">${pct}%</span></div>`;
+                return `<div class="as-div-row">
+                    <span class="as-div-lbl">Col ${i+1}|${i+2}</span>
+                    <input type="range" id="as-cdiv-${i}" class="as-div-slider" min="${lo}" max="${hi}" value="${pct}"
+                        oninput="asOnColDiv(${i},this.value)">
+                    <span class="as-div-pct" id="as-cdiv-pct-${i}">${pct}%</span>
+                </div>`;
             }).join('');
         }
         if (AS.rowDividers.length) {
@@ -267,37 +290,50 @@ function _asBuildDividerHTML() {
                 const pct = Math.round(v*100);
                 const lo  = i===0 ? 5 : Math.round(AS.rowDividers[i-1]*100)+5;
                 const hi  = i===AS.rowDividers.length-1 ? 95 : Math.round(AS.rowDividers[i+1]*100)-5;
-                return `<div class="as-div-row"><span class="as-div-lbl">Row ${i+1}|${i+2}</span><input type="range" id="as-rdiv-${i}" class="as-div-slider" min="${lo}" max="${hi}" value="${pct}" oninput="asOnRowDiv(${i},this.value)"><span class="as-div-pct" id="as-rdiv-pct-${i}">${pct}%</span></div>`;
+                return `<div class="as-div-row">
+                    <span class="as-div-lbl">Row ${i+1}|${i+2}</span>
+                    <input type="range" id="as-rdiv-${i}" class="as-div-slider" min="${lo}" max="${hi}" value="${pct}"
+                        oninput="asOnRowDiv(${i},this.value)">
+                    <span class="as-div-pct" id="as-rdiv-pct-${i}">${pct}%</span>
+                </div>`;
             }).join('');
         }
         return html;
     }
 
-    return `<p class="as-div-legend"><strong>Size</strong> moves the boundary. <strong>Gradient</strong> changes the angle.</p>` +
+    return `<div class="as-div-controls-wrapper">` +
+        `<div class="as-div-sizes">` +
         AS.dividers.map((div,i) => {
             const pct = Math.round(div.pos*100);
-            const ang = div.angle || 0;
             const lo  = i===0 ? 5 : Math.round(AS.dividers[i-1].pos*100)+5;
             const hi  = i===AS.dividers.length-1 ? 95 : Math.round(AS.dividers[i+1].pos*100)-5;
-            return `<div class="as-div-block">
-                <div class="as-div-header">Camp ${i+1} | Camp ${i+2}</div>
-                <div class="as-div-row">
-                    <span class="as-div-lbl">Size</span>
-                    <input type="range" id="as-div-${i}" class="as-div-slider" min="${lo}" max="${hi}" value="${pct}" oninput="asOnDiv(${i},this.value)">
-                    <span class="as-div-pct" id="as-div-pct-${i}">${pct}%</span>
-                </div>
-                <div class="as-div-row">
-                    <span class="as-div-lbl">Gradient</span>
-                    <input type="range" id="as-div-ang-${i}" class="as-div-slider as-ang-slider" min="-45" max="45" value="${ang}" oninput="asOnDivAngle(${i},this.value)">
-                    <span class="as-div-pct" id="as-div-ang-pct-${i}">${ang>0?'+':''}${ang}°</span>
-                </div>
+            return `<div class="as-div-row as-size-row">
+                <label class="as-div-lbl">Camp ${i+1}/${i+2}</label>
+                <input type="range" id="as-div-${i}" class="as-div-slider" min="${lo}" max="${hi}" value="${pct}"
+                    oninput="asOnDiv(${i},this.value)">
+                <span class="as-div-pct" id="as-div-pct-${i}">${pct}%</span>
             </div>`;
-        }).join('');
+        }).join('') +
+        `</div>` +
+        `<div class="as-div-angles">` +
+        AS.dividers.map((div,i) => {
+            const ang = div.angle || 0;
+            return `<div class="as-div-row as-angle-row">
+                <label class="as-div-lbl">Orientation ${i+1}</label>
+                <input type="range" id="as-div-ang-${i}" class="as-div-slider as-ang-slider" min="-45" max="45" value="${ang}"
+                    oninput="asOnDivAngle(${i},this.value)">
+                <span class="as-div-pct" id="as-div-ang-pct-${i}">${ang>0?'+':''}${ang}°</span>
+            </div>`;
+        }).join('') +
+        `</div>` +
+        `</div>`;
 }
 
 // ── Slider handlers ───────────────────────────────────────────
 function asSetCount(n) {
-    AS.count = Math.max(1, Math.min(20, n));
+    AS.count = Math.max(1, Math.min(50, n));
+    const input = document.getElementById('asCampNumInput');
+    if (input) input.value = AS.count;
     _asResetDividers();
     _asRebuildCamps();
     _asClearCampLayers();
@@ -314,35 +350,40 @@ function asSetDir(dir) {
     _asRenderPanel();
 }
 
-function asOnDiv(idx, rawVal) {
-    AS.dividers[idx].pos = parseInt(rawVal)/100;
-    const pEl = document.getElementById(`as-div-pct-${idx}`); if (pEl) pEl.textContent = rawVal+'%';
+function asOnDiv(idx, val) {
+    const rawVal = parseInt(val);
+    AS.dividers[idx].pos = rawVal / 100;
+    const pEl = document.getElementById(`as-div-pct-${idx}`); if(pEl) pEl.textContent = rawVal+'%';
     const prev = document.getElementById(`as-div-${idx-1}`); if(prev) prev.max = parseInt(rawVal)-5;
     const next = document.getElementById(`as-div-${idx+1}`); if(next) next.min = parseInt(rawVal)+5;
     _asScheduleRefresh();
 }
 
-function asOnDivAngle(idx, rawVal) {
-    AS.dividers[idx].angle = parseInt(rawVal);
-    const aEl = document.getElementById(`as-div-ang-pct-${idx}`);
-    const v = parseInt(rawVal);
-    if (aEl) aEl.textContent = (v>0?'+':'')+v+'°';
-    _asScheduleRefresh();
-}
-
-function asOnColDiv(idx, rawVal) {
-    AS.colDividers[idx] = parseInt(rawVal)/100;
+function asOnColDiv(idx, val) {
+    const rawVal = parseInt(val);
+    AS.colDividers[idx] = rawVal / 100;
     const pEl = document.getElementById(`as-cdiv-pct-${idx}`); if(pEl) pEl.textContent = rawVal+'%';
     const prev = document.getElementById(`as-cdiv-${idx-1}`); if(prev) prev.max = parseInt(rawVal)-5;
     const next = document.getElementById(`as-cdiv-${idx+1}`); if(next) next.min = parseInt(rawVal)+5;
     _asScheduleRefresh();
 }
 
-function asOnRowDiv(idx, rawVal) {
-    AS.rowDividers[idx] = parseInt(rawVal)/100;
+function asOnRowDiv(idx, val) {
+    const rawVal = parseInt(val);
+    AS.rowDividers[idx] = rawVal / 100;
     const pEl = document.getElementById(`as-rdiv-pct-${idx}`); if(pEl) pEl.textContent = rawVal+'%';
     const prev = document.getElementById(`as-rdiv-${idx-1}`); if(prev) prev.max = parseInt(rawVal)-5;
     const next = document.getElementById(`as-rdiv-${idx+1}`); if(next) next.min = parseInt(rawVal)+5;
+    _asScheduleRefresh();
+}
+
+function asOnDivAngle(idx, val) {
+    AS.dividers[idx].angle = parseInt(val);
+    const pEl = document.getElementById(`as-div-ang-pct-${idx}`);
+    if(pEl) {
+        const ang = AS.dividers[idx].angle;
+        pEl.textContent = (ang>0?'+':'') + ang + '°';
+    }
     _asScheduleRefresh();
 }
 
@@ -426,10 +467,12 @@ function _asRebuildCamps() {
         }));
 
     } catch(err) {
+        // Log error for debugging but don't expose to user
         AS.camps = [];
     }
 }
 
+// Return the largest simple Polygon from a Feature<Polygon|MultiPolygon>.
 function _asLargestPolygon(feature) {
     if (!feature || !feature.geometry) return feature;
     if (feature.geometry.type !== 'MultiPolygon') return feature;
@@ -441,6 +484,7 @@ function _asLargestPolygon(feature) {
     return bestCoords ? turf.polygon(bestCoords) : feature;
 }
 
+// Build the divider line for a {pos, angle} divider.
 function _asDividerLine(div, bbox) {
     const [minLng,minLat,maxLng,maxLat] = bbox;
     const ang = (div.angle||0) * Math.PI/180;
@@ -458,6 +502,7 @@ function _asDividerLine(div, bbox) {
     return [[baseX-L*dx, baseY-L*dy],[baseX+L*dx, baseY+L*dy]];
 }
 
+// Cut a Turf polygon with a two-point line. Returns [left,right] or [poly].
 function _asCutWithLine(poly, linePts) {
     try {
         const [p1, p2] = linePts;
@@ -578,25 +623,30 @@ function _asFinishReshape(save) {
     _asRenderPanel();
 }
 
+// ── Reset dividers ─────────────────────────────────────────────
+function _asResetDividers() {
+    if (AS.dir === 'grid') {
+        const cols = Math.ceil(Math.sqrt(AS.count));
+        const rows = Math.ceil(AS.count / cols);
+        AS.colDividers = [];
+        AS.rowDividers = [];
+        for (let i = 1; i < cols; i++) AS.colDividers.push(i/cols);
+        for (let i = 1; i < rows; i++) AS.rowDividers.push(i/rows);
+    } else {
+        AS.dividers = [];
+        for (let i = 1; i < AS.count; i++) {
+            AS.dividers.push({ pos: i/AS.count, angle:0 });
+        }
+    }
+}
+
 // ── Save to main map ──────────────────────────────────────────
 function asSave() {
-    if (!AS.camps.length) { alert('No camps to save.'); return; }
-    
+    if (!AS.camps.length) { alert('No camps to save — draw a boundary first.'); return; }
     document.querySelectorAll('.as-name-input').forEach((inp,i) => {
         if (AS.camps[i]) AS.camps[i].name = inp.value.trim() || AS.camps[i].name;
     });
-
-    let existing = loadFields();
-    
-    if (AS.sourceFieldId) {
-        // Remove the original field that we just split
-        existing = existing.filter(f => f.id !== AS.sourceFieldId);
-        
-        // Remove old events associated with the deleted parent field
-        let events = loadEvents().filter(e => e.fieldId !== AS.sourceFieldId);
-        saveEvents(events);
-    }
-
+    const existing  = loadFields();
     const newFields = AS.camps.map(c => ({
         id:         c.id,
         name:       c.name,
@@ -618,6 +668,6 @@ function asSave() {
     if (typeof updateStats === 'function') updateStats();
     
     closeAutoSplit();
-    setStatus(`${newFields.length} camp${newFields.length!==1?'s':''} created successfully.`);
-    if (newFields.length && typeof selectField === 'function') setTimeout(() => selectField(newFields[0].id), 300);
+    setStatus(`${newFields.length} camp${newFields.length!==1?'s':''} created.`);
+    if (newFields.length) setTimeout(() => selectField(newFields[0].id), 300);
 }
