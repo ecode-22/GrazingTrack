@@ -89,17 +89,38 @@ function renderStep1(title, body) {
         <input type="text" id="s1Lng" placeholder="Longitude e.g. 28.04" value="${setupData.farmLocation.lng || ''}">
         <button class="setup-locate-btn" onclick="autoLocate()">📍 Use GPS</button>
       </div>
-      <small>Or leave blank — you can pan the map to your farm in the next steps.</small>
+      <small id="gpsStatus">🔍 Detecting GPS location...</small>
     </div>
     <div class="setup-tip">💡 <strong>Tip:</strong> Open Google Maps, right-click your farm, and copy the coordinates shown at the top of the menu.</div>`;
+    // Auto-attempt GPS detection
+    setTimeout(() => autoLocate(true), 500);
 }
 
-function autoLocate() {
-    if (!navigator.geolocation) { alert('GPS not available on this device.'); return; }
-    navigator.geolocation.getCurrentPosition(pos => {
-        document.getElementById('s1Lat').value = pos.coords.latitude.toFixed(5);
-        document.getElementById('s1Lng').value = pos.coords.longitude.toFixed(5);
-    }, () => alert('Could not get location. Enter coordinates manually.'));
+function autoLocate(isAutomatic = false) {
+    const statusEl = document.getElementById('gpsStatus');
+
+    if (!navigator.geolocation) {
+        if (statusEl) statusEl.textContent = '📍 Manual entry — GPS not available';
+        return;
+    }
+
+    navigator.geolocation.getCurrentPosition(
+        pos => {
+            const lat = pos.coords.latitude.toFixed(5);
+            const lng = pos.coords.longitude.toFixed(5);
+            document.getElementById('s1Lat').value = lat;
+            document.getElementById('s1Lng').value = lng;
+            if (statusEl) statusEl.textContent = '✅ Location detected (' + lat + ', ' + lng + ')';
+        },
+        err => {
+            if (statusEl) {
+                statusEl.textContent = '📍 Manual entry — enable location access or enter coordinates';
+            }
+            if (!isAutomatic) {
+                alert('Could not get location. Enter coordinates manually.');
+            }
+        }
+    );
 }
 
 function validateStep1() {
