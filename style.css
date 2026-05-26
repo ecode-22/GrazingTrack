@@ -2308,7 +2308,20 @@ body {
 
 .as-layout {
     display: flex;
+    flex-direction: column;
     height: 100%;
+}
+
+.as-layout .mh,
+.as-layout .mf {
+    flex-shrink: 0;
+}
+
+.as-layout .mb {
+    display: flex;
+    flex: 1;
+    overflow: hidden;
+    padding: 0;
 }
 
 .as-panel {
@@ -2319,11 +2332,13 @@ body {
     overflow-y: auto;
     background: var(--bg);
     padding: 20px;
+    flex-shrink: 0;
 }
 
 .as-map-wrap {
     flex: 1;
     position: relative;
+    min-height: 400px;
 }
 
 #asMap {
@@ -2830,6 +2845,7 @@ body {
     margin-top: 12px;
 }
 
+/* Override .as-mb for auto-split modal - not used anymore but kept for compatibility */
 .as-mb {
     max-height: 500px;
     overflow-y: auto;
@@ -2843,7 +2859,11 @@ body {
         width: 100%;
         border-right: none;
         border-bottom: 1px solid var(--border);
-        height: 50%;
+        height: auto;
+        max-height: 50vh;
+    }
+    .as-map-wrap {
+        min-height: 300px;
     }
 }
 /* ── Improved Auto-Split UI Styles ──────────────────────────── */
