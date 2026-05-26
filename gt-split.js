@@ -673,8 +673,16 @@ function asSave() {
     document.querySelectorAll('.as-name-input').forEach((inp,i) => {
         if (AS.camps[i]) AS.camps[i].name = inp.value.trim() || AS.camps[i].name;
     });
+    
+    // Get grazing cycle config for day/night mode
+    let grazingCycle = 'standard';
+    try {
+        const cfg = JSON.parse(localStorage.getItem('gt_config') || '{}');
+        grazingCycle = cfg.grazingCycle || 'standard';
+    } catch(e) {}
+    
     const existing  = loadFields();
-    const newFields = AS.camps.map(c => ({
+    const newFields = AS.camps.map((c, i) => ({
         id:         c.id,
         name:       c.name,
         type:       'pasture',
@@ -684,7 +692,8 @@ function asSave() {
         areaHa:     c.areaHa,
         color:      c.color,
         createdAt:  new Date().toISOString(),
-        version:    DB_VERSION
+        version:    DB_VERSION,
+        grazingMode: grazingCycle === 'daynight' ? (i % 2 === 0 ? 'day' : 'night') : 'standard'
     }));
     saveFields([...existing, ...newFields]);
     drawnItems.clearLayers();
