@@ -12,6 +12,7 @@ let vertexCount = 0;
 // NDVI globals
 let ndviLayer = null;
 let ndviActive = false;
+let pressureLayer = null; // NEW
 
 // Heatmap globals
 let heatmapActive = false;
@@ -72,6 +73,7 @@ function _removeNDVI() {
     }
     ndviLayer = null;
 }
+window.togglePressureHeatmap = togglePressureHeatmap;
 
 function initMap() {
     if (!document.getElementById('map')) return;
@@ -98,12 +100,7 @@ function initMap() {
     drawControl = new L.Control.Draw({
         position: 'topright',
         draw: {
-            polygon: { allowIntersection: false, showArea: true, shapeOptions: { color: '#52b788', fillColor: '#52b788', fillOpacity: 0.25, weight: 2.5, dashArray: '6 4' } },
-            rectangle: false,
-            circle: false,
-            circlemarker: false,
-            marker: false,
-            polyline: false
+            polygon: { allowIntersection: false, showArea: true, shapeOptions: { color: '#52b788', fillColor: '#52b788', fillOpacity: 0.25, weight: 2.5, dashArray: '6 4' } }
         },
         edit: { featureGroup: drawnItems, remove: false }
     });
@@ -125,17 +122,6 @@ function initMap() {
         e.layers.eachLayer(l => pts.push(l.getLatLng()));
         vertexCount = pts.length;
         updateUndoBtn();
-        if (pts.length >= 3) {
-            const geo = {
-                type: 'Polygon',
-                coordinates: [
-                    [...pts, pts[0]].map(p => [p.lng, p.lat])
-                ]
-            };
-            setStatus(`Drawing — ${pts.length} points · ~${calcAreaHa(geo).toFixed(1)} ha · double-click to finish`);
-        } else {
-            setStatus(`Drawing — ${pts.length} point${pts.length !== 1 ? 's' : ''} placed · need at least 3`);
-        }
     });
 
     map.on(L.Draw.Event.EDITED, e => {
@@ -153,7 +139,6 @@ function initMap() {
         renderFieldList();
         updateStats();
         if (selectedFieldId) selectField(selectedFieldId);
-        setStatus('Field shapes updated.');
         setTool('select');
     });
 
@@ -189,7 +174,6 @@ function setTool(tool) {
         if (editBtn) editBtn.classList.add('active');
         try { if (map && drawControl) map.addControl(drawControl); } catch (e) {}
         setTimeout(() => { const b = document.querySelector('.leaflet-draw-edit-edit'); if (b) b.click(); }, 60);
-        setStatus('Drag handles to reshape · click Save in the map toolbar when done');
         if (ub) ub.style.display = 'none';
     } else {
         const selectBtn = document.getElementById('btnSelect');

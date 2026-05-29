@@ -1802,23 +1802,61 @@ body {
     color: var(--text-muted);
 }
 
+.sb-fields {
+    flex: 1;
+    overflow-y: auto;
+    min-height: 0;
+}
 
 /* ── Group List (Dashboard) ─────────────────────────────────── */
 
-.grp-list {
+.sb-label {
+    font-size: 10px;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: .08em;
+    color: var(--text-muted);
+    margin-bottom: 12px;
     display: flex;
+    align-items: center;
+    gap: 8px;
     flex-direction: column;
     gap: 6px;
 }
 
-.grp-row {
+.n-badge {
+    background: var(--grn-pale);
+    color: var(--grn-dark);
+    font-size: 10px;
+    font-weight: 700;
+    padding: 2px 8px;
+    border-radius: var(--radius-full);
+}
+
+
+/* ── Tool Grid ──────────────────────────────────────────────── */
+
+.tool-grid {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 8px;
+    margin-bottom: 12px;
+}
+
+.tcrd {
     display: flex;
+    flex-direction: column;
     align-items: center;
     gap: 10px;
     padding: 10px 12px;
     border: 1px solid var(--border-light);
     border-radius: var(--radius);
-    background: var(--bg);
+    border: 1.5px solid var(--border);
+    background: var(--bg-card);
+    font-size: 11px;
+    font-weight: 600;
+    color: var(--text-secondary);
+    cursor: pointer;
     transition: var(--transition);
 }
 
@@ -1834,7 +1872,22 @@ body {
     flex: 1;
 }
 
-.grp-row-name {
+.tcrd.green:hover {
+    background: #d1fae5;
+}
+
+
+/* NDVI Button */
+
+.ndvi-toggle-btn {
+    width: 100%;
+    margin-top: 6px;
+    padding: 10px;
+    border-radius: var(--radius);
+    background: var(--bg-card);
+    border: 2px solid #16a34a;
+    color: #14532d;
+    font-size: 12px;
     font-weight: 700;
     font-size: 13px;
 }
@@ -1883,6 +1936,10 @@ body {
     font-weight: 600;
     margin-left: auto;
     transition: var(--transition);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 8px;
 }
 
 .grp-add-btn:hover {
@@ -1893,8 +1950,45 @@ body {
 
 /* ── Rain Forecast ──────────────────────────────────────────── */
 
-.rain-section-lbl {
-    font-size: 11px;
+.field-item {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: 12px 14px;
+    border-radius: var(--radius);
+    border: 1.5px solid var(--border);
+    background: var(--bg-card);
+    cursor: pointer;
+    transition: var(--transition);
+    margin-bottom: 6px;
+}
+
+.field-item:hover {
+    border-color: var(--grn-light);
+    transform: translateX(3px);
+    box-shadow: var(--shadow-sm);
+}
+
+.field-item.selected {
+    background: var(--grn-pale);
+    border-color: var(--grn-border);
+    box-shadow: 0 0 0 1px var(--grn-border);
+}
+
+.field-dot {
+    width: 12px;
+    height: 12px;
+    border-radius: 50%;
+    flex-shrink: 0;
+    box-shadow: 0 1px 2px rgba(0, 0, 0, .15);
+}
+
+.field-item-info {
+    flex: 1;
+    min-width: 0;
+}
+
+.field-item-name {
     font-weight: 700;
     color: var(--text-muted);
     margin-bottom: 8px;
@@ -2006,7 +2100,18 @@ body {
 
 /* ── Exports ────────────────────────────────────────────────── */
 
-.exp-row {
+.fg {
+    margin-bottom: 16px;
+    flex: 1;
+    min-width: 0;
+}
+
+.frow {
+    display: flex;
+    gap: 16px;
+}
+
+.fg label {
     display: block;
     width: 100%;
     padding: 14px 16px;
@@ -2016,8 +2121,6 @@ body {
     background: var(--bg-card);
     font-size: 13px;
     font-weight: 600;
-    cursor: pointer;
-    transition: var(--transition);
     color: var(--text);
     text-align: left;
 }
@@ -2047,6 +2150,11 @@ body {
     transform: translateY(-1px);
 }
 
+.color-swatches {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px;
+}
 
 /* ════════════════════════════════════════════════════════════
    MOBILE

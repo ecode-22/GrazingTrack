@@ -1,4 +1,22 @@
 // ============================================================
+//  gt-analytics.js  —  Advanced Farm Analytics & Graphs
+// ============================================================
+'use strict';
+
+// Average Daily Gain (ADG) estimates in kg per animal type
+const ADG_RATES = { cattle: 1.1, sheep: 0.25, goats: 0.20, horses: 0, pigs: 0.6, mixed: 0.5 };
+
+function renderAnalytics() {
+    const container = document.getElementById('analyticsContent');
+    if (!container) return;
+
+    const fields = loadFields();
+    const events = loadEvents();
+
+    if (fields.length === 0) {
+        container.innerHTML = `
+            <div class="warn-box" style="margin-top: 20px;">
+                <strong>No data available.</strong> Please draw fields and log grazing events to see analytics.
 //  gt-analytics.js  —  Analytics Overview Page
 //  Comprehensive farm data visualisation and insights
 // ============================================================

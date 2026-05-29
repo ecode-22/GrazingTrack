@@ -8,14 +8,14 @@
 const AS = {
     map: null,
     drawn: null,
-    drawControl: null,
     boundary: null,
     boundaryLayer: null,
     campLayers: [],
+    sourceFieldId: null,
 
-    count: 4,
+    count: 2,
     dir: 'vertical',
-    dividers: [{ pos: 0.25, angle: 0 }, { pos: 0.50, angle: 0 }, { pos: 0.75, angle: 0 }],
+    dividers: [{ pos: 0.50, angle: 0 }],
     colDividers: [0.50],
     rowDividers: [0.50],
 
@@ -41,16 +41,16 @@ function openAutoSplit() {
         boundary: null,
         boundaryLayer: null,
         campLayers: [],
-        count: 4,
+        sourceFieldId: null,
+        count: 2,
         dir: 'vertical',
-        dividers: [{ pos: 0.25, angle: 0 }, { pos: 0.50, angle: 0 }, { pos: 0.75, angle: 0 }],
+        dividers: [{ pos: 0.50, angle: 0 }],
         colDividers: [0.50],
         rowDividers: [0.50],
         camps: [],
         reshapeIdx: null,
         reshapeGroup: null,
         reshapeControl: null,
-        drawControl: null,
         _refreshTimer: null
     });
     openModal('modalAutoSplit');
@@ -87,18 +87,8 @@ function _asInitMap() {
             lats.push(lat);
             lngs.push(lng);
         }));
-        center = [(Math.min(...lats) + Math.max(...lats)) / 2,
-            (Math.min(...lngs) + Math.max(...lngs)) / 2
-        ];
+        center = [(Math.min(...lats) + Math.max(...lats)) / 2, (Math.min(...lngs) + Math.max(...lngs)) / 2];
         zoom = 13;
-    } else {
-        try {
-            const cfg = JSON.parse(localStorage.getItem('gt_config') || '{}');
-            if (cfg.lat) {
-                center = [cfg.lat, cfg.lng];
-                zoom = 14;
-            }
-        } catch (e) {}
     }
 
     AS.map = L.map('asMap', { zoomControl: true }).setView(center, zoom);
@@ -178,6 +168,19 @@ function _asRenderPanel() {
     }
 
     if (!AS.boundary) {
+        const fields = loadFields();
+        if (fields.length === 0) {
+            panel.innerHTML = `
+                <div class="as-welcome">
+                    <div class="as-welcome-icon">🌾</div>
+                    <p class="as-welcome-title">No fields exist yet</p>
+                    <p class="as-welcome-sub">You must draw fields on the map before you can split them.</p>
+                </div>`;
+            document.getElementById('asSaveBtn').disabled = true;
+            return;
+        }
+
+        const options = fields.map(f => `<option value="${f.id}">${f.name} (${f.areaHa.toFixed(1)} ha)</option>`).join('');
         panel.innerHTML = `
             <div class="as-welcome">
                 <div class="as-welcome-icon">⬡</div>
@@ -384,7 +387,6 @@ function asOnDivAngle(idx, val) {
     _asScheduleRefresh();
 }
 
-// Debounce — 80ms after the last slider move before recomputing.
 function _asScheduleRefresh() {
     if (AS._refreshTimer) clearTimeout(AS._refreshTimer);
     AS._refreshTimer = setTimeout(() => {
@@ -414,7 +416,6 @@ function _asRebuildAndRefresh() {
 // ── Split algorithm ───────────────────────────────────────────
 function _asRebuildCamps() {
     if (!AS.boundary) { AS.camps = []; return; }
-
     try {
         const farmPoly = turf.polygon(AS.boundary.coordinates);
         const bbox     = turf.bbox(farmPoly);
@@ -455,9 +456,11 @@ function _asRebuildCamps() {
         }
 
         const valid = polys.filter(p => calcAreaHa(p.geometry) > 0.01);
+        const fieldNameBase = loadFields().find(f => f.id === AS.sourceFieldId)?.name || 'Camp';
+
         AS.camps = valid.map((p,i) => ({
             id:       uid(),
-            name:     oldNames[i] || `Camp ${i+1}`,
+            name:     oldNames[i] || `${fieldNameBase} - Part ${i+1}`,
             geometry: p.geometry,
             color:    AS_COLORS[i % AS_COLORS.length],
             areaHa:   calcAreaHa(p.geometry)
@@ -546,18 +549,12 @@ function _asDrawCampLayers() {
                 const c = turf.centroid({ type:'Feature', geometry:camp.geometry, properties:{} });
                 [cLng, cLat] = c.geometry.coordinates;
             } catch(e) {
-                const ring = camp.geometry.type==='Polygon'
-                    ? camp.geometry.coordinates[0]
-                    : camp.geometry.coordinates[0][0];
+                const ring = camp.geometry.type==='Polygon' ? camp.geometry.coordinates[0] : camp.geometry.coordinates[0][0];
                 cLng = ring.reduce((s,p)=>s+p[0],0)/ring.length;
                 cLat = ring.reduce((s,p)=>s+p[1],0)/ring.length;
             }
 
-            const icon = L.divIcon({
-                className:'',
-                html:`<div class="camp-lbl">${camp.name}</div>`,
-                iconAnchor:[30,10]
-            });
+            const icon = L.divIcon({ className:'', html:`<div class="camp-lbl">${camp.name}</div>`, iconAnchor:[30,10] });
             const m = L.marker([cLat,cLng], { icon, interactive:false }).addTo(AS.map);
             AS.campLayers.push(layer, m);
         } catch(e) {}
@@ -569,50 +566,32 @@ function asReshapeCamp(idx) {
     if (AS.reshapeIdx !== null) return;
     AS.reshapeIdx = idx;
 
-    if (AS.drawControl) {
-        try { AS.map.removeControl(AS.drawControl); } catch(e) {}
-    }
-
     _asClearCampLayers();
     AS.camps.forEach((camp,i) => {
         if (i === idx) return;
         try {
-            const layer = L.geoJSON(
-                { type:'Feature', geometry:camp.geometry, properties:{} },
-                { style:{ color:camp.color, fillColor:camp.color, fillOpacity:0.12, weight:1.5, dashArray:'4 3' } }
-            ).addTo(AS.map);
+            const layer = L.geoJSON({ type:'Feature', geometry:camp.geometry, properties:{} }, { style:{ color:camp.color, fillColor:camp.color, fillOpacity:0.12, weight:1.5, dashArray:'4 3' } }).addTo(AS.map);
             AS.campLayers.push(layer);
         } catch(e) {}
     });
 
     AS.reshapeGroup = new L.FeatureGroup().addTo(AS.map);
     try {
-        L.geoJSON(
-            { type:'Feature', geometry:AS.camps[idx].geometry, properties:{} },
-            { style:{ color:AS.camps[idx].color, fillColor:AS.camps[idx].color, fillOpacity:0.55, weight:3 } }
-        ).eachLayer(l => AS.reshapeGroup.addLayer(l));
+        L.geoJSON({ type:'Feature', geometry:AS.camps[idx].geometry, properties:{} }, { style:{ color:AS.camps[idx].color, fillColor:AS.camps[idx].color, fillOpacity:0.55, weight:3 } }).eachLayer(l => AS.reshapeGroup.addLayer(l));
     } catch(e) {}
 
-    AS.reshapeControl = new L.Control.Draw({
-        position:'topright', draw:false,
-        edit:{ featureGroup:AS.reshapeGroup, remove:false }
-    });
+    AS.reshapeControl = new L.Control.Draw({ position:'topright', draw:false, edit:{ featureGroup:AS.reshapeGroup, remove:false } });
     AS.map.addControl(AS.reshapeControl);
 
     setTimeout(() => {
         const mapEl = document.getElementById('asMap');
-        if (mapEl) {
-            const btn = mapEl.querySelector('.leaflet-draw-edit-edit');
-            if (btn) btn.click();
-        }
+        if (mapEl) { const btn = mapEl.querySelector('.leaflet-draw-edit-edit'); if (btn) btn.click(); }
     }, 80);
-
     _asRenderPanel();
 }
 
 function _asFinishReshape(save) {
     if (AS.reshapeIdx === null) return;
-
     if (save && AS.reshapeGroup) {
         AS.reshapeGroup.eachLayer(l => {
             try {
@@ -627,8 +606,7 @@ function _asFinishReshape(save) {
 
     if (AS.reshapeControl) {
         try {
-            const mapEl = document.getElementById('asMap');
-            const saveBtn = mapEl && mapEl.querySelector('.leaflet-draw-edit-save');
+            const saveBtn = document.getElementById('asMap').querySelector('.leaflet-draw-edit-save');
             if (saveBtn) saveBtn.click();
             AS.map.removeControl(AS.reshapeControl);
         } catch(e) {}
@@ -640,11 +618,6 @@ function _asFinishReshape(save) {
     }
 
     AS.reshapeIdx = null;
-
-    if (AS.drawControl && AS.map) {
-        try { AS.map.addControl(AS.drawControl); } catch(e) {}
-    }
-
     _asClearCampLayers();
     _asDrawCampLayers();
     _asRenderPanel();
@@ -695,11 +668,14 @@ function asSave() {
         version:    DB_VERSION,
         grazingMode: grazingCycle === 'daynight' ? (i % 2 === 0 ? 'day' : 'night') : 'standard'
     }));
+
     saveFields([...existing, ...newFields]);
-    drawnItems.clearLayers();
-    restoreFieldsOnMap();
-    renderFieldList();
-    updateStats();
+    
+    if (typeof drawnItems !== 'undefined') drawnItems.clearLayers();
+    if (typeof restoreFieldsOnMap === 'function') restoreFieldsOnMap();
+    if (typeof renderFieldList === 'function') renderFieldList();
+    if (typeof updateStats === 'function') updateStats();
+    
     closeAutoSplit();
     setStatus(`${newFields.length} camp${newFields.length!==1?'s':''} created.`);
     if (newFields.length) setTimeout(() => selectField(newFields[0].id), 300);
