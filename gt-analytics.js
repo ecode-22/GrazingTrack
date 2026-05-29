@@ -1,22 +1,4 @@
 // ============================================================
-//  gt-analytics.js  —  Advanced Farm Analytics & Graphs
-// ============================================================
-'use strict';
-
-// Average Daily Gain (ADG) estimates in kg per animal type
-const ADG_RATES = { cattle: 1.1, sheep: 0.25, goats: 0.20, horses: 0, pigs: 0.6, mixed: 0.5 };
-
-function renderAnalytics() {
-    const container = document.getElementById('analyticsContent');
-    if (!container) return;
-
-    const fields = loadFields();
-    const events = loadEvents();
-
-    if (fields.length === 0) {
-        container.innerHTML = `
-            <div class="warn-box" style="margin-top: 20px;">
-                <strong>No data available.</strong> Please draw fields and log grazing events to see analytics.
 //  gt-analytics.js  —  Analytics Overview Page
 //  Comprehensive farm data visualisation and insights
 // ============================================================
@@ -27,7 +9,6 @@ function renderAnalytics() {
     const panel = document.getElementById('panel-analytics');
     if (!panel) return;
 
-    // Make sure global functions are available
     if (typeof loadFields === 'undefined') {
         panel.innerHTML = '<div class="sv"><div class="empty-state"><div class="empty-icon">⚠️</div><p class="empty-msg">Loading...</p></div></div>';
         return;
@@ -58,7 +39,6 @@ function renderAnalytics() {
     const nDanger = statuses.filter(s => s.cls === 'danger').length;
     const nNever = statuses.filter(s => s.cls === 'none').length;
 
-    // Rest compliance
     const restCompliance = fields.map(f => ({
         name: f.name,
         pct: getReadinessPct(f),
@@ -71,11 +51,9 @@ function renderAnalytics() {
     const compliantCount = restCompliance.filter(f => f.pct >= 100).length;
     const complianceRate = fields.length ? Math.round(compliantCount / fields.length * 100) : 0;
 
-    // Active animals
     const activeEvents = events.filter(e => e.startDate <= today && e.endDate >= today);
     const totalAnimalsGrazing = activeEvents.reduce((s, e) => s + (e.animalCount || 0), 0);
 
-    // Monthly event counts for timeline
     const last6Months = [];
     for (let i = 5; i >= 0; i--) {
         const d = new Date();
@@ -85,7 +63,6 @@ function renderAnalytics() {
         last6Months.push({ month: key, count, label: monthLabel(key) });
     }
 
-    // Field performance data
     const fieldPerformance = fields.map(f => {
         const fEvents = events.filter(e => e.fieldId === f.id).sort((a, b) => b.startDate.localeCompare(a.startDate));
         const totalGrazingDays = fEvents.reduce((s, e) => s + daysBetween(e.startDate, e.endDate), 0);
@@ -114,7 +91,6 @@ function renderAnalytics() {
         };
     });
 
-    // Build the analytics HTML
     const html = `
     <div class="sv">
         <div class="analytics-header">
@@ -122,7 +98,6 @@ function renderAnalytics() {
             <p>Comprehensive overview of your grazing operation — ${today}</p>
         </div>
 
-        <!-- KPI Row -->
         <div class="kpi-row" style="margin-top:20px">
             <div class="kpi">
                 <div class="kpi-lbl">Total Fields</div>
@@ -152,7 +127,6 @@ function renderAnalytics() {
         </div>
 
         <div class="analytics-grid" style="margin-top:20px">
-            <!-- Rest Compliance Bar Chart -->
             <div class="analytics-card">
                 <div class="analytics-card-title">📈 Rest Compliance by Field</div>
                 <div class="bar-chart">
@@ -173,7 +147,6 @@ function renderAnalytics() {
                 </div>
             </div>
 
-            <!-- Farm Area Breakdown (Donut) -->
             <div class="analytics-card">
                 <div class="analytics-card-title">🌾 Farm Area Breakdown</div>
                 <div class="chart-donut-wrap">
@@ -181,7 +154,6 @@ function renderAnalytics() {
                 </div>
             </div>
 
-            <!-- Grazing Activity Timeline -->
             <div class="analytics-card">
                 <div class="analytics-card-title">📅 Monthly Grazing Activity</div>
                 <div class="bar-chart" style="height:140px">
@@ -198,7 +170,6 @@ function renderAnalytics() {
                 </div>
             </div>
 
-            <!-- Field Performance Table -->
             <div class="analytics-card wide">
                 <div class="analytics-card-title">📋 Field Performance Overview</div>
                 <div style="overflow-x:auto">
@@ -244,13 +215,11 @@ function renderAnalytics() {
                 </div>
             </div>
 
-            <!-- Stocking Rate Summary -->
             <div class="analytics-card">
                 <div class="analytics-card-title">📊 Stocking Rate Summary</div>
                 ${buildStockingSummary(fields, events)}
             </div>
 
-            <!-- Animal Groups Summary -->
             <div class="analytics-card">
                 <div class="analytics-card-title">🐄 Animal Groups</div>
                 ${groups.length ? groups.map(g => `
