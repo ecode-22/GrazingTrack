@@ -1,5 +1,5 @@
 // ============================================================
-//  gt-events.js  —  Grazing events & history
+//  gt-events.js  —  Grazing events, BCS, Milk & history
 // ============================================================
 'use strict';
 
@@ -22,6 +22,7 @@ function openGrazingModal(preFieldId) {
     document.getElementById('gAnimalType').value = 'cattle';
     document.getElementById('gCount').value = '';
     document.getElementById('gHerd').value = '';
+    document.getElementById('gBCS').value = ''; // NEW
     document.getElementById('gNotes').value = '';
     document.getElementById('stockingWarning').style.display = 'none';
 
@@ -150,6 +151,7 @@ function saveGrazingEvent() {
     const type    = document.getElementById('gAnimalType').value.trim();
     const count   = parseInt(document.getElementById('gCount').value);
     const herd    = document.getElementById('gHerd').value.trim();
+    const bcs     = parseFloat(document.getElementById('gBCS').value) || null; // NEW
     const notes   = document.getElementById('gNotes').value.trim();
 
     if (!start || !end)      { alert('Enter start and end dates.'); return; }
@@ -158,7 +160,8 @@ function saveGrazingEvent() {
     if (!count || count < 1) { alert('Enter the number of animals.'); return; }
 
     const events = loadEvents();
-    events.push({ id:uid(), fieldId, startDate:start, endDate:end, animalType:type, animalCount:count, herd, notes, loggedAt:new Date().toISOString() });
+    // UPDATED to include BCS
+    events.push({ id:uid(), fieldId, startDate:start, endDate:end, animalType:type, animalCount:count, herd, bcs, notes, loggedAt:new Date().toISOString() });
     
     saveEvents(events);
     closeModal('modalGrazing');
@@ -182,16 +185,17 @@ function openHistoryModal(fieldId) {
     document.getElementById('historyBody').innerHTML = !events.length
         ? `<p class="no-history">No events yet.</p>`
         : `<table class="htbl">
-               <thead><tr><th>Start</th><th>End</th><th>Days</th><th>Animals</th><th>AU/ha</th><th>Notes</th><th></th></tr></thead>
+               <thead><tr><th>Start</th><th>End</th><th>Animals</th><th>BCS</th><th>AU/ha</th><th>Notes</th><th></th></tr></thead>
                <tbody>${events.map(e => {
                    const auHa = field.areaHa > 0 ? (e.animalCount / field.areaHa).toFixed(1) : '—';
                    const warn = field.maxAUperHa && (e.animalCount / field.areaHa) > field.maxAUperHa ? '⚠' : '';
                    const herdTag = e.herd ? ` <span class="ev-herd">${e.herd}</span>` : '';
+                   const bcsVal = e.bcs ? e.bcs.toFixed(1) : '—';
                    return `<tr>
                        <td>${fmtDate(e.startDate)}</td>
                        <td>${fmtDate(e.endDate)}</td>
-                       <td>${daysBetween(e.startDate,e.endDate)}</td>
                        <td>${e.animalCount} ${cap(e.animalType)}${herdTag}</td>
+                       <td>${bcsVal}</td>
                        <td>${warn}${auHa}</td>
                        <td style="color:#6b7280;font-size:11px">${e.notes||'—'}</td>
                        <td><button class="del-ev-btn" onclick="deleteEvent('${e.id}','${fieldId}')">✕</button></td>
@@ -214,10 +218,49 @@ function historyAddEvent() {
     openGrazingModal(historyFieldId);
 }
 
-function openGrazingModalForGroup(groupId) {
-    switchTab('map');
-    setTimeout(() => {
-        openGrazingModal(null);
-        setTimeout(() => _selectGroup(groupId), 120);
-    }, 60);
+// ==========================================
+// NEW: Milk Production Functions
+// ==========================================
+
+function openMilkModal() {
+    const fields = loadFields();
+    const groups = loadGroups().filter(g => g.type === 'cattle' || g.type === 'goats' || g.type === 'sheep');
+    
+    if (!fields.length) { alert('Please add fields first.'); return; }
+    
+    document.getElementById('mField').innerHTML = fields.map(f => `<option value="${f.id}">${f.name}</option>`).join('');
+    
+    if (groups.length) {
+        document.getElementById('mGroup').innerHTML = groups.map(g => `<option value="${g.id}">${g.name} (${g.count} ${g.type})</option>`).join('');
+    } else {
+        document.getElementById('mGroup').innerHTML = `<option value="manual">Manual Entry / Unknown</option>`;
+    }
+    
+    document.getElementById('mDate').value = todayStr();
+    document.getElementById('mMilk').value = '';
+    document.getElementById('mNotes').value = '';
+    
+    openModal('modalMilk');
 }
+
+function saveMilkEvent() {
+    const date = document.getElementById('mDate').value;
+    const groupId = document.getElementById('mGroup').value;
+    const fieldId = document.getElementById('mField').value;
+    const liters = parseFloat(document.getElementById('mMilk').value);
+    const notes = document.getElementById('mNotes').value.trim();
+
+    if (!date || !liters) { alert('Please enter the date and total milk volume.'); return; }
+
+    const prod = loadProduction();
+    prod.push({ id: uid(), date, groupId, fieldId, liters, notes, loggedAt: new Date().toISOString() });
+    saveProduction(prod);
+    
+    closeModal('modalMilk');
+    setStatus(`Logged ${liters}L of milk.`);
+    if (typeof renderAnalytics === 'function') renderAnalytics(); // Refresh analytics if open
+}
+
+// Make globally available
+window.openMilkModal = openMilkModal;
+window.saveMilkEvent = saveMilkEvent;

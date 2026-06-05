@@ -9,18 +9,28 @@ let selectedFieldId = null;
 let currentTool = 'select';
 let vertexCount = 0;
 
-// NDVI globals
 let ndviLayer = null;
 let ndviActive = false;
-let pressureLayer = null; // NEW
-
-// Heatmap globals
+let pressureLayer = null;
 let heatmapActive = false;
 
 function _ndviRecentDate() {
     const d = new Date();
     d.setDate(d.getDate() - 21);
     return d.toISOString().slice(0, 10);
+}
+
+// FIX: Align the date to NASA's strict 8-day cycle, and safely map future 2026 dates back to 2023 imagery
+function getValidNDVIDate(inputDateStr) {
+    const d = new Date(inputDateStr);
+    // Cap year at 2024. NASA doesn't have future imagery for 2026!
+    if (d.getUTCFullYear() > 2024) d.setUTCFullYear(2024);
+
+    const start = new Date(Date.UTC(d.getUTCFullYear(), 0, 0));
+    const doy = Math.floor((d.getTime() - start.getTime()) / (1000 * 60 * 60 * 24));
+    const compositeDOY = Math.floor((doy - 1) / 8) * 8 + 1;
+
+    return new Date(start.getTime() + (compositeDOY * 1000 * 60 * 60 * 24)).toISOString().slice(0, 10);
 }
 
 function toggleNDVIPanel() {
@@ -33,8 +43,7 @@ function toggleNDVIPanel() {
     if (btn) btn.classList.toggle('active', ndviActive);
 
     if (ndviActive) {
-        if (heatmapActive) togglePressureHeatmap(); // Disable heatmap if active
-
+        if (heatmapActive) togglePressureHeatmap();
         const dateInput = document.getElementById('ndviDate');
         if (dateInput && !dateInput.value) {
             dateInput.value = _ndviRecentDate();
@@ -51,20 +60,23 @@ function applyNDVI() {
     _removeNDVI();
     const dateInput = document.getElementById('ndviDate');
     const opacityInput = document.getElementById('ndviOpacity');
-    const date = dateInput ? dateInput.value : _ndviRecentDate();
+
+    const rawDate = dateInput && dateInput.value ? dateInput.value : _ndviRecentDate();
+    const alignedDate = getValidNDVIDate(rawDate);
     const opacity = opacityInput ? parseFloat(opacityInput.value) : 0.7;
 
-    ndviLayer = L.tileLayer(
-        `https://gibs.earthdata.nasa.gov/wmts/epsg3857/best/MODIS_Terra_NDVI_8Day/default/${date}/GoogleMapsCompatible_Level9/{z}/{y}/{x}.png`, {
-            attribution: '🛰 NASA GIBS',
-            maxNativeZoom: 9,
-            maxZoom: 20,
-            opacity: opacity,
-            tileSize: 256
-        }
-    );
+    // FIX: Using WMS bypasses the Zoom Level crash completely
+    ndviLayer = L.tileLayer.wms('https://gibs.earthdata.nasa.gov/wms/epsg3857/best/wms.cgi', {
+        layers: 'MODIS_Terra_NDVI_8Day',
+        format: 'image/png',
+        transparent: true,
+        time: alignedDate,
+        attribution: '🛰 NASA GIBS',
+        opacity: opacity
+    });
+
     ndviLayer.addTo(map);
-    ndviLayer.on('tileerror', () => setStatus('⚠ NDVI tiles unavailable for this date.'));
+    setStatus(`Loading satellite view for ${alignedDate}...`);
 }
 
 function _removeNDVI() {
@@ -82,10 +94,7 @@ function initMap() {
 
     const sat = L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}', { attribution: 'Tiles © Esri', maxZoom: 19 });
     const osm = L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png', { attribution: '© OpenStreetMap', maxZoom: 19 });
-    const topo = L.tileLayer('https://{s}.tile.opentopomap.org/{z}/{x}/{y}.png', {
-        maxZoom: 17,
-        attribution: 'Map data: © OpenStreetMap contributors, SRTM | Map style: © OpenTopoMap'
-    });
+    const topo = L.tileLayer('https://{s}.tile.opentopomap.org/{z}/{x}/{y}.png', { maxZoom: 17, attribution: 'Map data: © OpenStreetMap contributors, SRTM | Map style: © OpenTopoMap' });
 
     const hyb = L.layerGroup([
         sat,
@@ -99,9 +108,7 @@ function initMap() {
     drawnItems = new L.FeatureGroup().addTo(map);
     drawControl = new L.Control.Draw({
         position: 'topright',
-        draw: {
-            polygon: { allowIntersection: false, showArea: true, shapeOptions: { color: '#52b788', fillColor: '#52b788', fillOpacity: 0.25, weight: 2.5, dashArray: '6 4' } }
-        },
+        draw: { polygon: { allowIntersection: false, showArea: true, shapeOptions: { color: '#52b788', fillColor: '#52b788', fillOpacity: 0.25, weight: 2.5, dashArray: '6 4' } } },
         edit: { featureGroup: drawnItems, remove: false }
     });
 
@@ -111,10 +118,7 @@ function initMap() {
         vertexCount = 0;
         updateUndoBtn();
         if (typeof openModal === 'function') openModal('modalName');
-        setTimeout(() => {
-            const nameInput = document.getElementById('inName');
-            if (nameInput) nameInput.focus();
-        }, 80);
+        setTimeout(() => { const nameInput = document.getElementById('inName'); if (nameInput) nameInput.focus(); }, 80);
     });
 
     map.on('draw:drawvertex', e => {
@@ -132,9 +136,7 @@ function initMap() {
             field.geometry = layer.toGeoJSON().geometry;
             field.areaHa = calcAreaHa(field.geometry);
             saveFields(fields);
-            if (layer.setTooltipContent) {
-                layer.setTooltipContent(`<strong>${field.name}</strong><br>${field.areaHa.toFixed(1)} ha`);
-            }
+            if (layer.setTooltipContent) layer.setTooltipContent(`<strong>${field.name}</strong><br>${field.areaHa.toFixed(1)} ha`);
         });
         renderFieldList();
         updateStats();
@@ -270,26 +272,18 @@ function openEditFieldModal(fieldId) {
     const field = fields.find(f => f.id === fieldId);
     if (!field) return;
 
-    const editId = document.getElementById('editFieldId');
-    const editName = document.getElementById('editName');
-    const editType = document.getElementById('editType');
-    const editRest = document.getElementById('editRest');
-    const editMaxAU = document.getElementById('editMaxAU');
-    const colorPicker = document.getElementById('editColorPicker');
-
+    const editId = document.getElementById('editFieldId'),
+        editName = document.getElementById('editName'),
+        editType = document.getElementById('editType'),
+        editRest = document.getElementById('editRest'),
+        editMaxAU = document.getElementById('editMaxAU'),
+        colorPicker = document.getElementById('editColorPicker');
     if (editId) editId.value = field.id;
     if (editName) editName.value = field.name;
     if (editType) editType.value = field.type;
     if (editRest) editRest.value = field.restTarget;
     if (editMaxAU) editMaxAU.value = field.maxAUperHa || '';
-    if (colorPicker) {
-        colorPicker.innerHTML = COLORS.map(c =>
-            `<div class="color-swatch${c === field.color ? ' chosen' : ''}"
-                 style="background:${c}"
-                 onclick="selectColor(this)"
-                 title="${c}"></div>`
-        ).join('');
-    }
+    if (colorPicker) { colorPicker.innerHTML = COLORS.map(c => `<div class="color-swatch${c === field.color ? ' chosen' : ''}" style="background:${c}" onclick="selectColor(this)" title="${c}"></div>`).join(''); }
     if (typeof openModal === 'function') openModal('modalEditField');
     setTimeout(() => { const en = document.getElementById('editName'); if (en) en.focus(); }, 80);
 }
@@ -300,15 +294,13 @@ function selectColor(el) {
 }
 
 function saveFieldEdit() {
-    const editId = document.getElementById('editFieldId');
-    const editName = document.getElementById('editName');
-    const editType = document.getElementById('editType');
-    const editRest = document.getElementById('editRest');
-    const editMaxAU = document.getElementById('editMaxAU');
-
-    const id = editId ? editId.value : '';
-    const name = editName ? editName.value.trim() : '';
-
+    const editId = document.getElementById('editFieldId'),
+        editName = document.getElementById('editName'),
+        editType = document.getElementById('editType'),
+        editRest = document.getElementById('editRest'),
+        editMaxAU = document.getElementById('editMaxAU');
+    const id = editId ? editId.value : '',
+        name = editName ? editName.value.trim() : '';
     if (!name) { alert('Enter a field name.'); return; }
 
     const fields = loadFields();
@@ -318,15 +310,7 @@ function saveFieldEdit() {
     const chosenSwatch = document.querySelector('.color-swatch.chosen');
     const color = chosenSwatch ? chosenSwatch.title : fields[idx].color;
 
-    fields[idx] = {
-        ...fields[idx],
-        name: name,
-        type: editType ? editType.value : 'pasture',
-        restTarget: (editRest ? parseInt(editRest.value) : 42) || 42,
-        maxAUperHa: editMaxAU ? parseFloat(editMaxAU.value) || null : null,
-        color: color
-    };
-
+    fields[idx] = {...fields[idx], name: name, type: editType ? editType.value : 'pasture', restTarget: (editRest ? parseInt(editRest.value) : 42) || 42, maxAUperHa: editMaxAU ? parseFloat(editMaxAU.value) || null : null, color: color };
     saveFields(fields);
     if (drawnItems) {
         drawnItems.eachLayer(layer => {
@@ -336,7 +320,6 @@ function saveFieldEdit() {
             }
         });
     }
-
     if (typeof closeModal === 'function') closeModal('modalEditField');
     renderFieldList();
     if (selectedFieldId === id) selectField(id);
@@ -367,9 +350,7 @@ function deleteSelected() {
     const field = fields.find(f => f.id === selectedFieldId);
     if (!field || !confirm(`Delete "${field.name}"?\nAll grazing events will also be deleted.`)) return;
 
-    if (drawnItems) {
-        drawnItems.eachLayer(l => { if (l.options && l.options.fieldId === selectedFieldId) drawnItems.removeLayer(l); });
-    }
+    if (drawnItems) { drawnItems.eachLayer(l => { if (l.options && l.options.fieldId === selectedFieldId) drawnItems.removeLayer(l); }); }
     saveFields(fields.filter(f => f.id !== selectedFieldId));
     saveEvents(loadEvents().filter(e => e.fieldId !== selectedFieldId));
 
@@ -399,15 +380,11 @@ function selectField(fieldId) {
     let stockHTML = '';
     if (last && field.maxAUperHa) {
         const auHa = last.animalCount / field.areaHa;
-        if (auHa > field.maxAUperHa) {
-            stockHTML = `<div class="warn-box alert" style="margin:8px 0;font-size:11px">⚠ Last event: ${auHa.toFixed(1)} AU/ha exceeds limit of ${field.maxAUperHa} AU/ha</div>`;
-        }
+        if (auHa > field.maxAUperHa) stockHTML = `<div class="warn-box alert" style="margin:8px 0;font-size:11px">⚠ Last event: ${auHa.toFixed(1)} AU/ha exceeds limit of ${field.maxAUperHa} AU/ha</div>`;
     }
 
     const barClr = pct >= 100 ? '#10b981' : pct >= 60 ? '#f59e0b' : '#9ca3af';
-    const progHTML = `<div class="rest-prog"><div class="rest-prog-fill" style="width:${pct}%;background:${barClr}"></div></div>
-        <div class="rest-prog-lbl"><span>Rest progress</span><span>${pct}%${pct < 100 ? ' · ' + (Math.max(0, field.restTarget - (restDays || 0))) + 'd left' : ' · Ready!'}</span></div>`;
-
+    const progHTML = `<div class="rest-prog"><div class="rest-prog-fill" style="width:${pct}%;background:${barClr}"></div></div><div class="rest-prog-lbl"><span>Rest progress</span><span>${pct}%${pct < 100 ? ' · ' + (Math.max(0, field.restTarget - (restDays || 0))) + 'd left' : ' · Ready!'}</span></div>`;
     const endBtn = activeEvent ? `<button class="detail-btn end-graze" onclick="endGrazingToday('${activeEvent.id}','${fieldId}')">⏹ End Grazing</button>` : '';
 
     const detailSection = document.getElementById('detailSection');
@@ -423,48 +400,29 @@ function selectField(fieldId) {
             <div class="detail-row"><span class="detail-key">Days resting</span><span class="detail-val">${restDays !== null ? restDays + ' days' : 'No events yet'}</span></div>
             <div class="detail-row"><span class="detail-key">Max AU/ha</span><span class="detail-val">${field.maxAUperHa || '—'}</span></div>
             <div class="detail-row"><span class="detail-key">Events logged</span><span class="detail-val">${events.length}</span></div>
-            ${progHTML}
-            ${stockHTML}
-            <div class="detail-actions">
-                <button class="detail-btn edit" onclick="openEditFieldModal('${fieldId}')">✎ Edit</button>
-                <button class="detail-btn" onclick="openHistoryModal('${fieldId}')">📋 History</button>
-                ${endBtn}
-                <button class="detail-btn primary" onclick="openGrazingModal('${fieldId}')">+ Graze</button>
-            </div>`;
+            ${progHTML}${stockHTML}
+            <div class="detail-actions"><button class="detail-btn edit" onclick="openEditFieldModal('${fieldId}')">✎ Edit</button><button class="detail-btn" onclick="openHistoryModal('${fieldId}')">📋 History</button>${endBtn}<button class="detail-btn primary" onclick="openGrazingModal('${fieldId}')">+ Graze</button></div>`;
     }
 
     const deleteBtn = document.getElementById('btnDelete');
     const editBtn = document.getElementById('btnEdit');
     if (deleteBtn) deleteBtn.style.display = 'flex';
     if (editBtn) editBtn.style.display = 'flex';
-
-    if (drawnItems) {
-        drawnItems.eachLayer(l => { if (l.options && l.options.fieldId === fieldId && map) map.fitBounds(l.getBounds(), { padding: [60, 60], maxZoom: 17 }); });
-    }
+    if (drawnItems) { drawnItems.eachLayer(l => { if (l.options && l.options.fieldId === fieldId && map) map.fitBounds(l.getBounds(), { padding: [60, 60], maxZoom: 17 }); }); }
     setStatus(`${field.name} — ${field.areaHa.toFixed(2)} ha`);
 }
 
-function escapeHtml(str) {
-    if (!str) return '';
-    return str.replace(/[&<>]/g, function(m) {
-        if (m === '&') return '&amp;';
-        if (m === '<') return '&lt;';
-        if (m === '>') return '&gt;';
-        return m;
-    });
-}
+function escapeHtml(str) { return !str ? '' : str.replace(/[&<>]/g, m => m === '&' ? '&amp;' : m === '<' ? '&lt;' : '&gt;'); }
 
 function endGrazingToday(eventId, fieldId) {
     const events = loadEvents();
     const ev = events.find(e => e.id === eventId);
     if (!ev) return;
-
     const today = todayStr();
     const days = daysBetween(ev.startDate, today);
     const fields = loadFields();
     const field = fields.find(f => f.id === fieldId);
     const name = field ? field.name : 'this field';
-
     if (!confirm(`End grazing on ${name} today?\n\n${ev.animalCount} ${ev.animalType} · ${days} day${days !== 1 ? 's' : ''} (${fmtDate(ev.startDate)} → ${fmtDate(today)})\n\nThe rest period will start from today.`)) return;
 
     ev.endDate = today;
@@ -478,12 +436,11 @@ function endGrazingToday(eventId, fieldId) {
 
 function deselectField() {
     selectedFieldId = null;
-    const fieldItems = document.querySelectorAll('.field-item');
-    fieldItems.forEach(el => el.classList.remove('selected'));
+    document.querySelectorAll('.field-item').forEach(el => el.classList.remove('selected'));
     const detailSection = document.getElementById('detailSection');
     if (detailSection) detailSection.style.display = 'none';
-    const deleteBtn = document.getElementById('btnDelete');
-    const editBtn = document.getElementById('btnEdit');
+    const deleteBtn = document.getElementById('btnDelete'),
+        editBtn = document.getElementById('btnEdit');
     if (deleteBtn) deleteBtn.style.display = 'none';
     if (editBtn) editBtn.style.display = 'none';
 }
@@ -492,42 +449,25 @@ function renderFieldList() {
     const fields = loadFields();
     const fieldCount = document.getElementById('fieldCount');
     const fieldList = document.getElementById('fieldList');
-
     if (fieldCount) fieldCount.textContent = fields.length;
     if (!fieldList) return;
-
-    if (!fields.length) {
-        fieldList.innerHTML = `<div class="empty-state"><div class="empty-icon">🌾</div><p class="empty-msg">No fields yet</p><p class="empty-sub">Use Draw or Auto-split to add paddocks</p></div>`;
-        return;
-    }
+    if (!fields.length) { fieldList.innerHTML = `<div class="empty-state"><div class="empty-icon">🌾</div><p class="empty-msg">No fields yet</p><p class="empty-sub">Use Draw or Auto-split to add paddocks</p></div>`; return; }
 
     fieldList.innerHTML = fields.map(f => {
         const s = getStatus(f);
-        return `<div class="field-item" data-id="${f.id}" onclick="selectField('${f.id}')">
-            <span class="field-dot" style="background:${f.color}"></span>
-            <div class="field-item-info">
-                <div class="field-item-name">${escapeHtml(f.name)}</div>
-                <div class="field-item-meta">${f.areaHa.toFixed(1)} ha · ${cap(f.type)}</div>
-            </div>
-            <span class="pill pill-${s.cls}">${s.label}</span>
-        </div>`;
+        return `<div class="field-item" data-id="${f.id}" onclick="selectField('${f.id}')"><span class="field-dot" style="background:${f.color}"></span><div class="field-item-info"><div class="field-item-name">${escapeHtml(f.name)}</div><div class="field-item-meta">${f.areaHa.toFixed(1)} ha · ${cap(f.type)}</div></div><span class="pill pill-${s.cls}">${s.label}</span></div>`;
     }).join('');
-
-    if (selectedFieldId) {
-        document.querySelectorAll('.field-item').forEach(el => el.classList.toggle('selected', el.dataset.id === selectedFieldId));
-    }
+    if (selectedFieldId) { document.querySelectorAll('.field-item').forEach(el => el.classList.toggle('selected', el.dataset.id === selectedFieldId)); }
 }
 
 function updateStats() {
     const fields = loadFields();
     const totalHa = fields.reduce((s, f) => s + f.areaHa, 0);
     const statuses = fields.map(f => getStatus(f));
-
-    const sFields = document.getElementById('sFields');
-    const sHa = document.getElementById('sHa');
-    const sGrazing = document.getElementById('sGrazing');
-    const sReady = document.getElementById('sReady');
-
+    const sFields = document.getElementById('sFields'),
+        sHa = document.getElementById('sHa'),
+        sGrazing = document.getElementById('sGrazing'),
+        sReady = document.getElementById('sReady');
     if (sFields) sFields.textContent = fields.length;
     if (sHa) sHa.textContent = totalHa.toFixed(1) + ' ha';
     if (sGrazing) sGrazing.textContent = statuses.filter(s => s.cls === 'grazing').length || '—';
@@ -587,11 +527,7 @@ function restoreFieldsOnMap() {
 function refreshMapColors() {
     const fields = loadFields();
     if (!drawnItems) return;
-    drawnItems.eachLayer(layer => {
-        if (!layer.options || !layer.options.fieldId) return;
-        const field = fields.find(f => f.id === layer.options.fieldId);
-        if (field) styleLayer(layer, field);
-    });
+    drawnItems.eachLayer(layer => { if (!layer.options || !layer.options.fieldId) return; const field = fields.find(f => f.id === layer.options.fieldId); if (field) styleLayer(layer, field); });
 }
 
 function loadFarmConfig() {
@@ -603,12 +539,7 @@ function loadFarmConfig() {
     } catch (e) {}
 }
 
-function checkFirstRun() {
-    const done = localStorage.getItem('gt_setup_done');
-    if (!done && typeof openSetup === 'function') openSetup();
-}
-
-// ── HEATMAP OVERLAY LOGIC ──────────────────────────────────────
+function checkFirstRun() { const done = localStorage.getItem('gt_setup_done'); if (!done && typeof openSetup === 'function') openSetup(); }
 
 function togglePressureHeatmap() {
     heatmapActive = !heatmapActive;
@@ -616,7 +547,6 @@ function togglePressureHeatmap() {
     if (btn) btn.classList.toggle('active', heatmapActive);
 
     if (heatmapActive) {
-        // Disable NDVI if active
         if (typeof ndviActive !== 'undefined' && ndviActive) toggleNDVIPanel();
         applyPressureHeatmap();
         setStatus('🔥 Grazing Pressure Heatmap active (Past 12 months)');
@@ -629,56 +559,35 @@ function togglePressureHeatmap() {
 function applyPressureHeatmap() {
     const fields = loadFields();
     const events = loadEvents();
-
-    // Calculate cutoff date for the past year
     const oneYearAgo = new Date();
     oneYearAgo.setFullYear(oneYearAgo.getFullYear() - 1);
     const oneYearAgoStr = oneYearAgo.toISOString().slice(0, 10);
-
-    let maxPressure = 0.0001; // Avoid division by zero
+    let maxPressure = 0.0001;
     const fieldPressures = {};
 
-    // 1. Calculate pressure per hectare for each field
     fields.forEach(f => {
         const fEvents = events.filter(e => e.fieldId === f.id && e.endDate >= oneYearAgoStr);
         let totalAnimalDays = 0;
-
         fEvents.forEach(e => {
-            // Only count grazing days within the last 365 days
             const start = e.startDate < oneYearAgoStr ? oneYearAgoStr : e.startDate;
             totalAnimalDays += (e.animalCount * daysBetween(start, e.endDate));
         });
-
         const density = f.areaHa > 0 ? (totalAnimalDays / f.areaHa) : 0;
         fieldPressures[f.id] = density;
-
         if (density > maxPressure) maxPressure = density;
     });
 
-    // 2. Apply a Green -> Yellow -> Red gradient based on relative pressure
     if (drawnItems) {
         drawnItems.eachLayer(layer => {
             if (layer.options && layer.options.fieldId) {
                 const density = fieldPressures[layer.options.fieldId] || 0;
-                const ratio = density / maxPressure; // Normalizes from 0.0 to 1.0
-
-                // Color calculation (0 = Green, 0.5 = Yellow, 1.0 = Red)
+                const ratio = density / maxPressure;
                 const r = ratio < 0.5 ? Math.round(255 * (ratio * 2)) : 255;
                 const g = ratio > 0.5 ? Math.round(255 * (1 - (ratio - 0.5) * 2)) : 255;
                 const color = `rgb(${r}, ${g}, 0)`;
-
-                layer.setStyle({
-                    fillColor: color,
-                    fillOpacity: 0.8,
-                    color: '#ffffff', // White borders to make them stand out
-                    weight: 2
-                });
-
-                // Update tooltip to show density
+                layer.setStyle({ fillColor: color, fillOpacity: 0.8, color: '#ffffff', weight: 2 });
                 const tt = layer.getTooltip();
-                if (tt) {
-                    layer.bindTooltip(`<strong>${tt.getContent().split('<br>')[0].replace(/<[^>]+>/g, '')}</strong><br>${density.toFixed(0)} Animal-Days/ha`, { permanent: false });
-                }
+                if (tt) { layer.bindTooltip(`<strong>${tt.getContent().split('<br>')[0].replace(/<[^>]+>/g, '')}</strong><br>${density.toFixed(0)} Animal-Days/ha`, { permanent: false }); }
             }
         });
     }
